@@ -1,0 +1,59 @@
+#macro(runComponent)
+
+  #import("public_filtersComponent.vm")
+
+  #set($componentID = "data_grid_1")
+  #set($filtersData = $!pageContext.get("filtersData_${componentID}"))
+  #set($submittedFilters = $!pageContext.get("submittedFilters_${componentID}"))
+
+  #buildJSEnvironment()
+
+  #if($filtersData.size() > 0)
+     #buildHtml()
+  #end
+
+
+  #set($filters = $!pageContext.get("filtersRaw_${componentID}"))
+
+
+
+  #set ($critical = $pageContext.get("critical"))
+  #set ($hml = $pageContext.get("hml"))
+  #set ($project = $pageContext.get("project"))
+  #set ($discard = $critical.put("caption", "Critical Tests"))
+  #set ($discard = $hml.put("caption", "H/M/L Tests"))
+  #set ($discard = $critical.put("imp", "critical"))
+  #set ($discard = $hml.put("imp", "(high medium low)"))
+  #set ($baseurl = "/polarion/#/project/$project/workitems/?query=")
+  #set ($hm = $pageContext.get("hashmap"))
+
+
+
+  <table border=2>
+    <tr>
+      <th></td>
+      <th>Total</td>
+      <th>Approved</td>
+      <th>Approved and Automated</td>
+      <th>% Automated of Approved</td>
+      <th>% Automated and Approved of Total</td>
+    </tr>
+    #foreach ($hm in [$critical, $hml])
+  <tr>
+            <td>$hm.get("caption")</td>
+            <td><a target="_blank" href="${baseurl}caseimportance.KEY:$hm.get('imp')">$hm.get("total")</a></td>
+            <td><a target="_blank" href="${baseurl}caseimportance.KEY:$hm.get('imp') AND status:approved">$hm.get("appr")</a></td>
+            <td><a target="_blank" href="${baseurl}caseimportance.KEY:$hm.get('imp') AND status:approved AND caseautomation.KEY:automated">$hm.get("apprauto")</td>
+            #set ($percAutoAppr = 100 * $hm.get("apprauto")/$hm.get("appr"))
+            #set ($percAutoall = 100 * $hm.get("apprauto")/$hm.get("total"))
+            <td>$percAutoAppr%</td>
+            <td>$percAutoall%</td>
+        </tr>
+    #end
+  </table>
+  #set ($p1 = 100 * $critical.get("apprauto")/$critical.get("appr"))
+  #set ($p2 = 100 * $hml.get("apprauto")/$hml.get("appr"))
+  #set($PQI = ($p1 * 65 + $p2*35)/100)<br/>
+  PQI = .$PQI
+
+#end

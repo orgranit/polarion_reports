@@ -1,0 +1,325 @@
+#**
+    We use it to collect, in turn, custom_fields for our filters type.
+    'polarionType'- polarion object type that we want to get its custom fields, for example: 'TestRun' or 'WorkItem'.
+    'polarionControlValue'- polarion object sub-type, for example: 'testcase' for 'WorkItem' (empty string for 'TestRun').
+    'filterFields' - list of fields that we add more to it in this macro.
+ *#
+#macro( collectCustomFieldsData $polarionType $polarionControlValue $filterFields)
+
+    ## Getting the custom fields from polarion
+    #set($customFields = $customFieldsService.getCustomFields($polarionType, $context, $polarionControlValue))
+    #foreach( $customField in $customFields )
+
+        #set($isCustom = true)
+        #set($isEnum = true)
+        #set($values = [])
+
+        #set($polarionName = $customField.getName())
+        #set($polarionId = $customField.getId())
+
+        ## 'primitiveType' can be 'String', 'Text' or 'Boolean'
+        #set($primitiveType = $customField.getType().getTypeName())
+
+        ## 'enumType' can be any enum type from polarion
+        #set($enumType = $customField.getType())
+
+        ## We determine  '$isEnum = false' only if its 'String' or 'Text' else its enum
+        #if($primitiveType.contains("String") || $primitiveType.contains("Text"))
+            #set($isEnum = false)
+
+        ## if its 'Boolean' '$isEnum' stays true and its values are 'true' and 'false'
+        #elseif ($primitiveType.contains("Boolean"))
+            $values.add("true")
+            $values.add("false")
+
+        ## field is enum
+        #elseif ($enumType.getEnumerationId().length() > 0)
+            #set($enum = $trackerService.getDataService().getEnumerationForEnumId($enumType, $context).getAvailableOptions($polarionControlValue))
+            #foreach( $option in $enum )
+                $values.add("$option.id")
+            #end
+        #end
+
+        #if(!$isEnum ||  $values.size() > 0)
+        	$filterFields.add([$polarionName, $polarionId, $values, $isEnum, $isCustom])
+        #end
+
+        ## The reason we set these variables to be empty is because, in velocity, when assigning a variable via a function
+        ## and the function return value is null, the variable wouldnt be assign, it will keep its previous value.
+        #set($polarionName = "")
+        #set($polarionId = "")
+        #set($primitiveType = "")
+        #set($enumType = "")
+
+    #end
+#end
+
+#**
+    We use it to collect, in turn, regular_fields data for our filters type.
+    'fieldName' - polarion field, for example: 'status'
+    'polarionType'- polarion object type that we want to get its fields, for example: 'TestRun' or 'WorkItem'.
+    'polarionControlValue'- polarion object sub-type, for example: 'testcase' for 'WorkItem' (empty string for 'TestRun').
+    'filterFields' - list of fields that we add more to it in this macro.
+ *#
+#macro( collectRegularFieldsData $fieldName $polarionType $polarionControlValue $filterFields)
+    #set($enums = $trackerService.getDataService().getEnumerationForKey($polarionType, $fieldName, $context).getAvailableOptions($polarionControlValue))
+    #set($values = [])
+    #foreach( $enum in $enums )
+            $values.add("$enum.id")
+    #end
+    $filterFields.add([$fieldName, $fieldName, $values, true, false])
+
+#end
+
+#**
+  This macro is for collecting 'roles' data
+  '$roleName' - its actually a prefix for example if we set 2 roles in the system 'team_golden_states' and 'team_cavaliers'
+                '$roleName' will be 'team'
+  'filterFields' - list of fields that we add more to it in this macro.
+*#
+#macro( collectRolesData $roleName $filterFields)
+    #set($roles = $securityService.getContextRoles($context))
+    #set($prefix = $roleName.length())
+    #set($subType = $prefix + 1)
+    #foreach ($role in $roles)
+        #if ($role.substring(0, $prefix) == $roleName)
+            #set($fieldName = $role.substring( $subType ))
+            #set ($users = $securityService.getUsersForContextRole($role, $context))
+            $filterFields.add([$fieldName, "USER", $users, true, true])
+        #end
+    #end
+#end
+
+
+#**
+    This macro adds 'filtersProperties' and 'submittedFilters'
+    to the page context by 'componentID'
+    'componentID'- the unique id of this component
+    'filtersProperties'- the array of filters properties
+*#
+
+#macro( setFiltersForComponent $componentID $filtersProperties)
+    #setFiltersData($componentID $filtersProperties)
+    #setSubmittedFilters($componentID)
+#end
+
+#macro( setSubmittedFilters $componentID)
+    #set($submittedFilters = [])
+    #set($filtersStrMulti = $pageParameters.get( $componentID ).value)
+    #if ($filtersStrMulti.length > 0 && $filtersOn)
+        #foreach ( $filterStrSingle in $filtersStrMulti.split("#multi#") )
+            #set($sorter = "type")
+            #set($filterType = "")
+            #set($filterField = "")
+            #set($filterValue = "")
+            #set($isCustom = "")
+            #foreach ( $param in $filterStrSingle.split("#single#") )
+                #if ($sorter == "type")
+                    #set($sorter = "field")
+                    #set($filterType = $param)
+                #elseif ($sorter == "field")
+                    #set($sorter = "value")
+                    #set($filterField = $param)
+                #elseif ($sorter == "value")
+                    #set($sorter = "isCustom")
+                    #set($filterValue = $param)
+                #elseif ($sorter == "isCustom")
+                    #set($isCustom = $param)
+                #end
+            #end
+            #set($newFilter = [$filterType, $filterField, $filterValue, $isCustom])
+            $submittedFilters.add($newFilter)
+       #end
+       $!pageContext.put("submittedFilters_${componentID}", $submittedFilters)
+   #end
+#end
+
+
+#macro( setFiltersData $componentID $filtersProperties)
+    #set($filtersData = [])
+    #if ($filtersOn)
+        #foreach ( $filterProperties in $filtersProperties)
+            #foreach ( $filterData in $polarionData )
+            	#if ($filterData.get(0) ==  $filterProperties.get($propertyFilterType))
+                	$filtersData.add($filterData)
+                #end
+            #end
+        #end
+
+        $!pageContext.put("filtersData_${componentID}", $filtersData)
+    #end
+#end
+
+
+#**
+   This macro adds custom-fields-based filters to a sql-based query.
+   'fromClause'- SQL FROM clause
+   'fieldName'- the field name which acts as the filter
+   'fieldValue'- value or values for a specific field
+   'tableName'- SQL table name
+   'primaryTableAlias'- SQL table alias
+   'counter'- indicator for uniqness
+*#
+
+#macro( SQLQueryCustomFilters $fromClause $fieldName $fieldValue $tableName $primaryTableAlias $counter )
+     #set($id = "CF${counter}")
+     #set($coalesce = "coalesce(${id}.c_boolean_value::text, ${id}.c_long_value::text, ${id}.c_float_value::text, ${id}.c_currency_value::text, ${id}.c_date_value::text, ${id}.c_dateonly_value::text, ${id}.c_durationtime_value::text, ${id}.c_string_value, ${id}.c_text_value)")
+     #set($values = "")
+     #foreach ( $value in $fieldValue.split(",") )
+         #set($values = "$values,'$value'")
+     #end
+     #set($values = "($values.substring(1))")
+     #set($fromClause = "$fromClause inner join CF_${tableName} ${id} on ${id}.FK_URI_${tableName}=${primaryTableAlias}.C_URI and ${id}.C_NAME='$fieldName' and $coalesce in $values")
+#end
+
+#**
+   This macro adds regular-fields-based filters to a sql-based query.
+   'fromClause'- SQL FROM clause
+   'fieldName'- the field name which acts as the filter
+   'fieldValue'- value or values for a specific field
+   'tableName'- SQL table name
+   'primaryTableAlias'- SQL table alias
+   'counter'- indicator for uniqness
+*#
+
+#macro( SQLQueryRegularFilters $whereClause $fieldName $fieldValue $tableName $primaryTableAlias $counter $filterIsRole)
+     #set($values = "")
+     #foreach ( $value in $filterValue.split(",") )
+         #set($values = "$values,'$value'")
+     #end
+     #set($values = "($values.substring(1))")
+     #if (!$filterIsRole)
+         #set($whereClause = "$whereClause AND ${filterAlias}.${filterField} in $values")
+     #else
+         #set($whereClause = "$whereClause AND ${filterAlias}.USER in $values")
+     #end
+#end
+
+
+#**
+   This macro adds filters to a sql-based query.
+   'query'- lucene query
+   'fieldName'- the field name which acts as the filter
+   'fieldValue'- value or values for a specific field
+*#
+
+#macro( LuceneQueryCustomFilters $query $fieldName $fieldValue)
+    #set($values = "")
+    #foreach ( $value in $filterValue.split(",") )
+        #set($values = "$values OR $value")
+    #end
+    #set($values = "($values.substring(4))")
+    #set($query = "$query AND ${fieldName}.KEY:${values}")
+#end
+
+#**
+   This macro adds regular-fields-based filters to a lucene-based query.
+   'query'- lucene query
+   'fieldName'- the field name which acts as the filter
+   'fieldValue'- value or values for a specific field
+*#
+
+#macro( LuceneQueryRegularFilters $query $fieldName $fieldValue)
+    #set($values = "")
+    #foreach ( $value in $filterValue.split(",") )
+        #set($values = "$values OR $value")
+    #end
+    #set($values = "($values.substring(4))")
+    #set($query = "$query AND ${fieldName}:${values}")
+#end
+
+
+#**
+   This macro adds filters to a query based on 'requiredFilters'
+   'isSQL' - SQL query or lucence query
+   'requiredFilters'- array of filters to apply on a specific query
+   'fromClause'- SQL FROM clause (if lucence, its the whole query)
+   'whereClause'- SQL WHERE clause (if lucence, its empty)
+   'componentID'- the unique id of this component
+*#
+
+#macro( filterizeMyQuery  $isSQL $requiredFilters $fromClause $whereClause $componentID)
+    #set($counter = 0)
+    #set($submittedFilters = [])
+    #foreach ( $requiredfilter in $requiredFilters )
+        #set($filterType = $requiredfilter.get($propertyFilterType))
+        #set($filterTable = $requiredfilter.get($propertyTableName))
+        #set($filterAlias = $requiredfilter.get($propertyTableAlias))
+        #set($filterIsRole = $requiredfilter.get($propertyIsRole))
+
+        #set($submittedFilters = $!pageContext.get("submittedFilters_${componentID}"))
+        #foreach ( $submittedFilter in $submittedFilters )
+            #if ($filterType == $submittedFilter.get(0))
+                #set($filterField = $submittedFilter.get(1))
+                #set($filterValue = $submittedFilter.get(2))
+
+                #if ($submittedFilter.get(3) == "true")
+                    #if ($isSQL)
+                        #SQLQueryCustomFilters( $fromClause $filterField $filterValue $filterTable $filterAlias "$counter")
+                    #else
+                       #LuceneQueryCustomFilters( $fromClause $filterField $fieldValue)
+                    #end
+                #else
+                    #if ($isSQL)
+                        #SQLQueryRegularFilters( $whereClause $filterField $filterValue $filterTable $filterAlias "$counter" $filterIsRole)
+                    #else
+                       #LuceneQueryRegularFilters( $fromClause $filterField $fieldValue)
+                    #end
+                #end
+
+                #set($counter = $counter + 1)
+            #end
+        #end
+    #end
+
+#end
+
+#**
+   This macro adds filters to a SQL query based on 'requiredFilters'
+   'requiredFilters'- array of filters to apply on a specific query
+   'fromClause'- SQL FROM clause
+   'whereClause'- SQL WHERE clause
+   'componentID'- the unique id of this component
+*#
+
+#macro( filterizeMySQLQuery $requiredFilters $fromClause $whereClause $componentID)
+    #if ($filtersOn)
+        #filterizeMyQuery (true $requiredFilters $fromClause $whereClause $componentID)
+    #end
+#end
+
+#**
+   This macro adds filters to a Lucenne query based on 'requiredFilters'
+   'requiredFilters'- array of filters to apply on a specific query
+   'query'- Lucene Query
+   'componentID'- the unique id of this component
+*#
+
+#macro( filterizeMyLuceneQuery $requiredFilters $query $componentID)
+    #if ($filtersOn)
+        #filterizeMyQuery (false $requiredFilters $query "" $componentID)
+    #end
+#end
+
+
+#**
+    collect polarion data and store it in 'polarionData' (global variable)
+    'filtersProperties' - List of filter properties defined by the user
+*#
+#macro( collectPolarionData $filtersProperties)
+  #foreach ($filterProperties in $filtersProperties)
+      #set($filterFields = [])
+      #set($filterType = $filterProperties.get($propertyFilterType))
+      #set($polarionType = $filterProperties.get($propertyPolarionType))
+
+      #if(!$filterProperties.get($propertyIsRole))
+          #set($polarionType = $filterProperties.get($propertyPolarionType))
+          #set($polarionControlValue = $filterProperties.get($propertyPolarionControlValue))
+          #collectCustomFieldsData( $polarionType $polarionControlValue $filterFields)
+          #collectRegularFieldsData("status" $polarionType $polarionControlValue $filterFields)
+      #else
+          #collectRolesData($filterType $filterFields)
+      #end
+      $polarionData.add([$filterType, $polarionType, $filterFields])
+  #end
+#end
