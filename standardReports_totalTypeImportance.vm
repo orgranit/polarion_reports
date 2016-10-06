@@ -1,0 +1,146 @@
+#macro (totalTypeImportance)
+    #set ($testtypes = $pageContext.get("testtypes"))
+    #set ($importances = $pageContext.get("importances"))
+    #set ($nonfuncs = $pageContext.get("nonfuncs"))
+    #set ($byTestTypeImportance = $pageContext.get("byTestTypeImportance"))
+    #set ($byNonfunctional = $pageContext.get("byNonfunctional"))
+    #set ($hm = $pageContext.get("hashmap"))
+    #set ($project = $pageContext.get("project"))
+    #set ($graphTotals = $hm.clone())
+
+        #set ($implist = [])
+        #set ($allimp = "")
+        #foreach ($key in $importances.keySet())
+            #set ($discard = $implist.add($key))
+            #set ($allimp = "$allimp $key")
+        #end
+        ##set valid values
+        #set ($allTestTypes = [])
+        #foreach($tt in $testtypes)
+          #set ($discard = $allTestTypes.add("'$tt'"))
+        #end
+	
+        #foreach ($imp in $implist)
+            #set ($vals = [])
+            #foreach($tt in $testtypes.keySet())
+                #set ($discard = $vals.add($byTestTypeImportance.get($tt).get($imp)))
+            #end
+            #if ($vals != [])
+                #set ($discard = $graphTotals.put($imp, $vals))
+            #end
+        #end
+
+    #set ($graphData = [])
+    #foreach ($elem in $graphTotals.keySet())
+        #set ($discard = $graphData.add("{name:'$importances.get($elem)',data:$graphTotals.get($elem)}"))
+    #end
+
+    #if ($pageContext.get("display_charts") == true)
+        #set($html = $renderingContext.createHtmlFragmentBuilder())
+        #set($builder = $renderingContext.createChartBuilder().build())
+        $!builder.title().text("Test Cases By Type and Importance").null
+        $!builder.chart().type().column().null
+        $!builder.addRawAttribute("xAxis","{categories: $allTestTypes, crosshair: true}").null
+        $!builder.addRawAttribute("series","$graphData").null
+        $!builder.render($html, 300, $renderingContext.columnWidth).null
+        $html
+    #end
+
+    <table border=2>
+      <tr>
+        <th>Category</th>
+        #set ($implist = [])
+        #set ($allimp = "")
+        #foreach ($key in $importances.keySet())
+	        <th>$importances.get($key)</th>
+            #set ($discard = $implist.add($key))
+            #set ($allimp = "$allimp $key")
+        #end
+        <th>Total</th>
+      </tr>
+        ##set valid values
+        #set ($allTestTypes = "")
+        #foreach($tt in $testtypes.keySet())
+          #set ($allTestTypes = "$allTestTypes $tt")
+        #end
+
+        #set ($colTotals = $hm.clone())
+        #foreach($tt in $testtypes.keySet())
+            <tr>
+            <td>$testtypes.get($tt)</td>
+            #set ($rowTotal = 0)
+            #foreach ($imp in $implist)
+                #if ($tt == "")
+                    #set ($qtt = "NOT testtype.KEY:($allTestTypes)")
+                #else
+                    #set ($qtt = "testtype.KEY:$tt")
+                #end
+                #if ($imp == "")
+                    #set ($qimp = "NOT caseimportance.KEY:($allimp)")
+                #else
+                    #set ($qimp = "caseimportance.KEY:$imp")
+                #end
+                
+                #set ($href = "<a target='_blank' href='/polarion/#/project/$project/workitems/?query=type:(testcase testsuite) AND $qtt AND $qimp'>")
+                #set ($val = $byTestTypeImportance.get($tt).get($imp))
+                <td>$href $val </a></td>
+                #set ($rowTotal = $rowTotal + $val)
+                #if (!$colTotals.containsKey($imp))
+                    #set ($discard = $colTotals.put($imp, 0))
+                #end
+                #set ($tot = $colTotals.get($imp) + $val) 
+                #set ($discard = $colTotals.put($imp, $tot))
+            #end
+            #set ($href = "<a target='_blank' href='/polarion/#/project/$project/workitems/?query=type:(testcase testsuite) AND $qtt'>")
+            <td>$href$rowTotal</a></td>
+            </tr>
+        #end
+        <tr>
+            <td>Total</td>
+            #set ($totalTotal = 0)
+            #foreach ($imp in $implist)
+                #if ($imp == "")
+                    #set ($qimp = "NOT caseimportance.KEY:($allimp)")
+                #else
+                    #set ($qimp = "caseimportance.KEY:$imp")
+                #end
+                #set ($href = "<a target='_blank' href='/polarion/#/project/$project/workitems/?query=type:(testcase testsuite) AND $qimp'>")
+                <td>$href$colTotals.get($imp)</a></td>
+                #set ($totalTotal = $totalTotal + $colTotals.get($imp))
+            #end
+            #set ($href = "<a target='_blank' href='/polarion/#/project/$project/workitems/?query=type:(testcase testsuite)'>")
+            <td>$href$totalTotal</a></td>
+        </tr>
+    </table>
+    Uncategorized - Missing a valid value for the test type or importance fields. </br></br>
+
+    Breakout of non-functional test cases
+    #set ($allnonfunc = "")
+    #foreach ($nf  in $nonfuncs.keySet())
+        #set ($allnonfunc = "$allnonfunc $nf")
+    #end
+    <table border=2>
+        <tr>
+            <th>Non-functional</th>
+            <th>Number of Tests</th>
+        </tr>
+        #set ($tot = 0)
+        #foreach ($row in $byNonfunctional.keySet())
+        	#if ($row != "")
+               #set ($qst1 = "subtype1.KEY:$row")
+            #else
+               #set ($qst1 = "NOT subtype1.KEY:($allnonfunc)")
+            #end
+            #set ($href = "<a href='/polarion/#/project/$project/workitems/testcase?query=testtype.KEY:nonfunctional AND $qst1'>")
+            <tr>
+                <td>$nonfuncs.get($row)</td>
+                <td>$href$byNonfunctional.get($row)</a></td>
+                #set ($tot = $tot + $byNonfunctional.get($row))
+            </tr>
+        #end
+        <tr>
+            <td>Total</td>
+            <td>$tot</td>
+        </tr>
+    </table>
+#end

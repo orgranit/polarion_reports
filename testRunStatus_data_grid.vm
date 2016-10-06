@@ -1,0 +1,130 @@
+#macro (dataTable)
+
+    #import ("public_filtersComponent.vm")
+
+    #set($componentID = "data_grid_1")
+    #set($filtersData = $!pageContext.get("filtersData_${componentID}"))
+    #set($submittedFilters = $!pageContext.get("submittedFilters_${componentID}"))
+
+    #buildJSEnvironment()
+
+    #if($filtersData.size() > 0)
+       #buildHtml()
+    #end
+
+
+    #set ($project = $pageContext.get("project"))
+    #set ($tabledata = $pageContext.get("tabledata"))
+    #set ($totalsMap = $pageContext.get("totalsMap"))
+
+    <br>Execution % = (1 - (Not Run / Planned)) * 100
+    <br>Quality % = Passed / (Planned - Not Run) * 100
+    <br>* Problem with TestRun - Likely document doesn't exist anymore
+    <table border=2>
+      <tr>
+        <td>Plan</td>
+        <td>Test Run Title / ID</td>
+        <td>Planned</td>
+        <td>Passed</td>
+        <td>Failed</td>
+        <td>Blocked</td>
+        <td>Not Run</td>
+        <td>Execution %</td>
+        <td>Quality %</td>
+      </tr>
+
+    #foreach($row in $tabledata)
+	    <tr>
+          <td>#if ($row.get("id") != "")<a href="/polarion/#/project/$project/plan?id=$row.get('id')" target="_blank">#end $row.get("name")</a></td>
+          <td>&nbsp</td>
+          <td>&nbsp</td>
+          <td>&nbsp</td>
+          <td>&nbsp</td>
+          <td>&nbsp</td>
+          <td>&nbsp</td>
+          <td>&nbsp</td>
+          <td>&nbsp</td>
+        </tr>
+
+        #foreach ($run in $row.get("testruns"))
+          #set ($plannedquery = $run.get("plannedquery").replaceAll('"', '%22'))
+          #set ($notrunquery = $run.get("notrunquery").replaceAll('"', '%22'))
+          #if ($run.get("planned") >= 0)
+              #set ($executionperc = 0)
+              #set ($qualityperc = 0)
+              #set ($executionperc = 100 - (($run.get("notrun") * 100) / $run.get("planned")))
+              #set ($qualityperc = ($run.get("passed") * 100) / ($run.get("planned") - $run.get("notrun")))
+		      ##if (!$executionperc)
+                  ##set ($executionperc = 0)
+              ##end
+		      ##if (!$qualityperc)
+                 ## c
+              ##end
+              #set ($execperc = "$executionperc%")
+              #set ($qualperc = "$qualityperc%")
+          #else
+              #set ($execperc = "*")
+              #set ($qualperc = "*")
+          #end
+          <tr>
+            <td>&nbsp</td>
+            <td><a href="/polarion/#/project/$project/testrun?id=$run.get('id')" target="_blank">#if ($run.get("title")) $run.get("title") #else $run.get("id") #end</a></td>
+            <td align="center">#if ($run.get("planned") >= 0)<a href="/polarion/#/project/$project/workitems?query=$plannedquery&sidebar=testrun&testrun=$run.get('id')" target="_blank">#end $run.get("planned")</a></td>
+            <td align="center"><a href="/polarion/#/project/$project/testrun?id=$run.get('id')&tab=records&result=passed" target="_blank"> $run.get('passed')</a></td>
+            <td align="center"><a href="/polarion/#/project/$project/testrun?id=$run.get('id')&tab=records&result=failed" target="_blank"> $run.get('failed')</a></td>
+            <td align="center"><a href="/polarion/#/project/$project/testrun?id=$run.get('id')&tab=records&result=blocked" target="_blank"> $run.get('blocked')</a></td>
+            <td align="center">#if ($run.get("notrun") >= 0)<a href="/polarion/#/project/$project/workitems?query=$notrunquery&sidebar=testrun&testrun=$run.get('id')" target="_blank">#end $run.get("notrun")</a></td>
+            
+            <td align="center">$execperc</td>
+            <td align="center">$qualperc</td>
+          </tr>
+        #end
+	    #if ($tabledata.size > 1)
+          #if ($row.get("planned") >= 0)
+              #set ($executionperc = 100 - (($row.get("notrun") * 100) / $row.get("planned")))
+              #set ($qualityperc = ($row.get("passed") * 100) / ($row.get("planned") - $row.get("notrun")))
+              #set ($execperc = "$executionperc%")
+              #set ($qualperc = "$qualityperc%")
+          #else
+              #set ($execperc = "*")
+              #set ($qualperc = "*")
+          #end
+          <tr>
+            <td>Subtotal</td>
+            <td>&nbsp</td>
+            <td align="center">$row.get("planned")</td>
+            <td align="center">$row.get('passed')</td>
+            <td align="center">$row.get('failed')</td>
+            <td align="center">$row.get('blocked')</td>
+            <td align="center">$row.get("notrun")</td>
+            
+            <td align="center">$execperc</td>
+            <td align="center">$qualperc</td>
+          </tr>
+        #end
+    #end
+    #if ($totalsMap.get("planned") >= 0)
+        #set ($executionperc = 100 - (($totalsMap.get("notrun") * 100) / $totalsMap.get("planned")))
+        #set ($qualityperc = ($totalsMap.get("passed") * 100) / ($totalsMap.get("planned") - $totalsMap.get("notrun")))
+        #set ($execperc = "$executionperc%")
+        #set ($qualperc = "$qualityperc%")
+    #else
+        #set ($execperc = "*")
+        #set ($qualperc = "*")
+    #end
+    <tr>
+      <td>Total</td>
+      <td>&nbsp</td>
+      <td align="center">$totalsMap.get("planned")</td>
+      <td align="center">$totalsMap.get('passed')</td>
+      <td align="center">$totalsMap.get('failed')</td>
+      <td align="center">$totalsMap.get('blocked')</td>
+      <td align="center">$totalsMap.get("notrun")</td>
+      
+      <td align="center">$execperc</td>
+      <td align="center">$qualperc</td>
+    </tr>
+
+    </table>
+    * Problem with TestRun - Likely document doesn't exist anymore 
+#end

@@ -1,0 +1,113 @@
+#macro (totalMilestoneByType)
+    #set ($tabledata = $pageContext.get("tabledata"))
+    #set ($testtypes = $pageContext.get("testtypes"))
+    #set ($nonfuncs = $pageContext.get("nonfuncs"))
+    #set ($hm = $pageContext.get("hashmap"))
+    #set ($project = $pageContext.get("project"))
+
+    #set ($planNames = "")
+    #set ($comma = "")
+    #foreach ($plan in $tabledata)
+	    #set ($planNames = "$planNames$comma'$plan.get('name')'")
+        #set ($comma = ",")
+    #end
+
+    #set ($graphTotals = $hm.clone())
+
+    #foreach ($tt in $testtypes.keySet())
+        #set ($vals = [])
+        #foreach ($plan in $tabledata)
+           #set ($discard = $vals.add($plan.get("testtype").get($tt)))
+        #end
+        #if ($vals != [])
+            #set ($discard = $graphTotals.put($tt, $vals))
+        #end
+    #end
+    #set ($graphData = [])
+    #foreach ($elem in $graphTotals.keySet())
+        #set ($discard = $graphData.add("{name:'$testtypes.get($elem)',data:$graphTotals.get($elem)}"))
+    #end
+
+
+    #if ($pageContext.get("display_charts") == true)
+        #set($html = $renderingContext.createHtmlFragmentBuilder())
+        #set($builder = $renderingContext.createChartBuilder().build())
+        $!builder.title().text("Test Case Types for Plan").null
+        $!builder.chart().type().column().null
+        $!builder.addRawAttribute("xAxis","{categories: [$planNames], crosshair: true}").null
+        $!builder.addRawAttribute("series","$graphData").null
+        $!builder.render($html, 300, $renderingContext.columnWidth).null
+        $html
+    #end
+
+    <table border=2>
+      <tr>
+        <th>Plan Name</th>
+        #set ($colTotals = $hm.clone())
+        #foreach ($tt in $testtypes.keySet())
+            <th>$testtypes.get($tt)</th>
+            #set ($discard = $colTotals.put($tt, 0))
+        #end
+        <th>Total</th>
+      </tr>
+      #set ($totalTotal = 0)
+      #foreach ($plan in $tabledata)
+          <tr>
+              <td>#if ($plan.get('id') != "")<a target="_blank" href="/polarion/#/project/$project/plan?id=$plan.get('id')">$plan.get("name")</a>#else $plan.get("name")#end</td>
+              #set ($rowTotal = 0)
+              #foreach ($tt in $testtypes.keySet())
+                  #set ($val = $plan.get("testtype").get($tt))
+                  <td>$val</td>
+                  #set ($rowTotal = $rowTotal + $val)
+                  #set ($totalTotal = $totalTotal + $val)
+                  #set ($colVal = $colTotals.get($tt) + $val)
+                  #set ($discard = $colTotals.put($tt, $colVal))
+              #end
+              <td>$rowTotal</td>
+          </tr>
+      #end
+      <tr>
+          <td>Total</td>
+          #foreach ($tt in $testtypes.keySet())
+               <td>$colTotals.get($tt)</td>
+          #end
+          <td>$totalTotal</td>
+      </tr>
+    </table>
+
+    <br><br>
+    <table border=2>
+      <tr>
+        <th>Plan Name</th>
+        #set ($colTotals = $hm.clone())
+        #foreach ($nf in $nonfuncs.keySet())
+            <th>$nonfuncs.get($nf)</th>
+            #set ($discard = $colTotals.put($nf, 0))
+        #end
+        <th>Total</th>
+      </tr>
+      #set ($totalTotal = 0)
+      #foreach ($plan in $tabledata)
+          <tr>
+              <td>#if ($plan.get('id') != "")<a target="_blank" href="/polarion/#/project/$project/plan?id=$plan.get('id')">$plan.get("name")</a>#else $plan.get("name")#end</td>
+              #set ($rowTotal = 0)
+              #foreach ($tt in $nonfuncs.keySet())
+                  #set ($val = $plan.get("testtype").get($tt))
+                  <td>$val</td>
+                  #set ($rowTotal = $rowTotal + $val)
+                  #set ($totalTotal = $totalTotal + $val)
+                  #set ($colVal = $colTotals.get($nf) + $val)
+                  #set ($discard = $colTotals.put($nf, $colVal))
+              #end
+              <td>$rowTotal</td>
+          </tr>
+      #end
+      <tr>
+          <td>Total</td>
+          #foreach ($nf in $nonfuncs.keySet())
+               <td>$colTotals.get($nf)</td>
+          #end
+          <td>$totalTotal</td>
+      </tr>
+    </table>
+#end

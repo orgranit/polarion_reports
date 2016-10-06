@@ -1,0 +1,75 @@
+#macro (totalMilestoneByLevel)
+    #set ($tabledata = $pageContext.get("tabledata"))
+    #set ($levels = $pageContext.get("levels"))
+    #set ($hm = $pageContext.get("hashmap"))
+    #set ($project = $pageContext.get("project"))
+
+    #set ($planNames = "")
+    #set ($comma = "")
+    #foreach ($plan in $tabledata)
+	    #set ($planNames = "$planNames$comma'$plan.get('name')'")
+        #set ($comma = ",")
+    #end
+
+    #set ($graphTotals = $hm.clone())
+
+    #foreach ($lvl in $levels.keySet())
+        #set ($vals = [])
+        #foreach ($plan in $tabledata)
+           #set ($discard = $vals.add($plan.get("level").get($lvl)))
+        #end
+        #if ($vals != [])
+            #set ($discard = $graphTotals.put($lvl, $vals))
+        #end
+    #end
+    #set ($graphData = [])
+    #foreach ($elem in $graphTotals.keySet())
+        #set ($discard = $graphData.add("{name:'$levels.get($elem)',data:$graphTotals.get($elem)}"))
+    #end
+
+    #if ($pageContext.get("display_charts") == true)
+        #set($html = $renderingContext.createHtmlFragmentBuilder())
+        #set($builder = $renderingContext.createChartBuilder().build())
+        $!builder.title().text("Test Case Types for Plan").null
+        $!builder.chart().type().column().null
+        $!builder.addRawAttribute("xAxis","{categories: [$planNames], crosshair: true}").null
+        $!builder.addRawAttribute("series","$graphData").null
+        $!builder.render($html, 300, $renderingContext.columnWidth).null
+        $html
+    #end
+
+    <table border=2>
+      <tr>
+        <th>Plan Name</th>
+        #set ($colTotals = $hm.clone())
+        #foreach ($lvl in $levels.keySet())
+            <th>$levels.get($lvl)</th>
+            #set ($discard = $colTotals.put($lvl, 0))
+        #end
+        <th>Total</th>
+      </tr>
+      #set ($totalTotal = 0)
+      #foreach ($plan in $tabledata)
+          <tr>
+              <td>#if ($plan.get('id') != "")<a target="_blank" href="/polarion/#/project/$project/plan?id=$plan.get('id')">$plan.get("name")</a>#else $plan.get("name")#end</td>
+              #set ($rowTotal = 0)
+              #foreach ($lvl in $levels.keySet())
+                  #set ($val = $plan.get("level").get($lvl))
+                  <td>$val</td>
+                  #set ($rowTotal = $rowTotal + $val)
+                  #set ($totalTotal = $totalTotal + $val)
+                  #set ($colVal = $colTotals.get($tt) + $val)
+                  #set ($discard = $colTotals.put($tt, $colVal))
+              #end
+              <td>$rowTotal</td>
+          </tr>
+      #end
+      <tr>
+          <td>Total</td>
+          #foreach ($lvl in $levels.keySet())
+               <td>$colTotals.get($lvl)</td>
+          #end
+          <td>$totalTotal</td>
+      </tr>
+    </table>
+#end

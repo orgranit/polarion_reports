@@ -1,0 +1,21 @@
+#macro (buildChart)
+    #if ($pageContext.get("display_charts") == true)
+        #set ($totalsMap = $pageContext.get("totalsMap"))
+        
+        
+        #set($html1 = $renderingContext.createHtmlFragmentBuilder())
+        #set($chart = $renderingContext.createChartBuilder())
+        #set($pie = $chart.pie().name("$tottestruns Test Runs"))
+        
+        $!pie.addValue("$totalsMap.get('runsnotrun') Not Run", $totalsMap.get("runsnotrun")).null
+        $!pie.addValue("$totalsMap.get('runsinprogress') InProgress", $totalsMap.get("runsinprogress")).null
+        $!pie.addValue("$totalsMap.get('runsfinished') Finished", $totalsMap.get("runsfinished")).null
+        
+        $!chart.build().title().text("$totalsMap.get('runs') Test Runs").null
+        $!chart.build().plotOptions().pie().addRawAttribute("tooltip", "{pointFormat: '<b>{point.y}</b>'}").null
+        $!chart.build().plotOptions().pie().addRawAttribute("size", "200").null
+        $!chart.build().render($html1, 300, $renderingContext.columnWidth).null
+        
+        $html1
+    #end
+#end

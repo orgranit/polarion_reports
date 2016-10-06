@@ -1,0 +1,16 @@
+#macro (projectPlanDropDowns)
+    ## Code to use the project/plan section, to allow seeing different projects from a single report.
+    #set ($userDefinedProject = "no_project")
+    #set ($userDefinedPlan = "no_plan")
+    #set($filtersOn = true)
+    #setFiltersForComponent("project_select" [$filterTestRun, $filterTestCase])
+    #set($filtersOn = $pageParameters.get("Filters_ON" ).value)
+    #set($projectPlanFilter = $!pageContext.get("submittedFilters_project_select").get(0))
+    #set ($userDefinedProject = $projectPlanFilter.get(0))
+    #set ($userDefinedPlan = $projectPlanFilter.get(1))
+    #if ($userDefinedProject != "no_project")
+      #set($context = $testManagementService.getTestRun($userDefinedProject, "empty").getContextId())
+      #set($polarionData = [])
+      #collectPolarionData($filtersProperties)
+    #end
+#end

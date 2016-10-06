@@ -1,0 +1,485 @@
+#macro (runPageScript)
+
+    #import("public_filtersPageScript.vm")
+    #import("public_projectPlanDropDowns.vm")
+    ## This map will remain empty and be used for cloning new maps.
+    ## Needed because we can't figure out how to create a hash map
+    #set ($hashmap = $pageContext.clone())
+    #set($polarionData = [])
+    #set($filtersOn = $pageParameters.get("Filters_ON" ).value)
+    #**
+        the following 2 lines are to set 2 global variables which will be used in 'collectCustomFieldsData' macro
+        'customFieldsService' - polarion service which provides custom fields
+        'context' - polarion object that is passed as an argument to 'customFieldsService'. it is extracted
+                    from an empty TestRun (which is contained in every project)
+    *#
+
+    #set($customFieldsService = $trackerService.getDataService().getCustomFieldsService())
+    #set($context = $testManagementService.getTestRun($page.reference.projectId, "empty").getContextId())
+
+    ## ================================================   Users Definitions Section ====================================================
+
+    #**
+        In this section is where the user will set its deseired filters.
+        Eventually the user will use these filters in the 'filterizeMyLuceneQuery' and 'filterizeMySQLQuery' macros.
+    *#
+
+    #set($propertyFilterType = 0)
+    #set($propertyPolarionType = 1)
+    #set($propertyPolarionControlValue = 2)
+    #set($propertyIsRole = 3)
+    #set($propertyTableName = 4)
+    #set($propertyTableAlias = 5)
+
+
+
+    #**
+        This is where we set our filters, when we want new filter just set a new one below and add it to 'filtersProperties' array
+        filter structure:
+            [filterType, polarionType, controlValue, isRole, tableName, primaryTableAlias]
+            - filterType: uniqe name without spaces ('Test_Run', 'Test_Case' will be displayed as "Test Run, Test Case")
+            - polarionType: polarion type e.g 'WorkItem'
+            - controlValue: polarion control value e.g 'testcase'
+            - isRole: Flag for filters of 'Role' type
+            - tableName: the SQL table name of this filter type
+            - primaryTableAlias: the SQL primary alias name of this filter type
+    *#
+
+
+
+    ## Set new Filters properties here
+
+    #set($filterTestRun = ["Test_Run", "TestRun", "", false, "TestRun", "TR"])                                ## TestRun Filter
+    #set($filterTestCase = ["Test_Case", "WorkItem", "testcase", false, "WorkItem", "TC"])                   ## TestCase Filter
+    #set($filterRequirement = ["Requirement", "WorkItem", "requirement", false, "WorkItem", "REQ"])        ## Requirement Filter
+    #set($filterPlan = ["Plan", "Plan", "plan", false, "Plan", "plan"])                                           ## Plan Filter
+    #set($filterTeam = ["Team", "", "", true, "USER", "team"])                                                    ## Team Filter
+
+
+    ## Append all filters properties to a List
+    #set($filtersProperties= [$filterTestRun, $filterTestCase, $filterRequirement, $filterPlan, $filterTeam])
+    #collectPolarionData($filtersProperties)
+
+
+
+    #projectPlanDropDowns()
+
+
+    #**
+        DO THIS FOR EACH COMPONENT
+        -The first argument is the 'componentID'
+        -The second is array of required filters for the component (the filters that appears in the filters drop-down)
+    *#
+
+    #setFiltersForComponent("data_grid_1" [$filterTestRun, $filterTestCase])
+
+
+
+
+    #macro(selectedFieldsPerType $type $fields)
+      #set($submittedFilters = $!pageContext.get("submittedFilters_field_select"))
+      #foreach ( $submittedFilter in $submittedFilters )
+      	#if ($type == $submittedFilter.get(0))
+        	#set($filterField = $submittedFilter.get(1))
+            $fields.add($filterField)
+        #end
+      #end        
+    #end
+
+
+    #set($filtersOn = true)
+    #setFiltersForComponent("field_select" [$filterTestRun, $filterTestCase])
+    #set($filtersOn = $pageParameters.get("Filters_ON" ).value)
+    #set($trfields = [])
+    #selectedFieldsPerType( "Test_Run" $trfields)
+    #set($tcfields = [])
+    #selectedFieldsPerType( "Test_Case" $tcfields)
+
+    ##================================================  Data Filtering Section ==============================================
+
+    #**
+        How to filterize your query?
+        1. Determine your required filters for this specific query
+        2. if you have a SQL query you need to split the query to 'fromClause' and a 'whereClause' and use 'filterizeMySQLQuery'
+        3. if you have a lucene query you need to use 'filterizeMyLuceneQuery'
+        Note: you can apply multiple filters on each query
+
+       This is an example of a SQL query
+       set($requiredFilters = [$filterTestRun])
+       set($fromClause = "SELECT Distinct TR.C_URI FROM TestRun TR")
+       set($whereClause = "WHERE P.C_ID = '$page.project'")
+       set($componentID = "data_grid_1")
+       filterizeMySQLQuery($requiredFilters $fromClause $whereClause $componentID )
+
+       This is an example of a Lucene query
+       set($requiredFilters = [$filterTestCase])
+       set($query = "type:testcase AND caseimportance.KEY:critical AND project.id:$project")
+       set($componentID = "data_grid_2")
+      filterizeMyLuceneQuery($requiredFilters $query $componentID )
+    *#
+
+
+    #set($requiredFilters = [$filterTestRun])
+    #set($testRunFilters = "")
+    #filterizeMyLuceneQuery($requiredFilters $testRunFilters "data_grid_1")
+
+    #set($requiredFilters = [$filterTestCase])
+    #set($testCaseFilters = "")
+    #filterizeMyLuceneQuery($requiredFilters $testCaseFilters "data_grid_1")
+
+
+
+    ## ===============================================        SIM SECTION      ================================================
+    <!-- get planningManager object and Management Service object -->
+    #set ($dataService = $trackerService.planningManager)
+    #set ($managementService = $testManagementService)
+
+    #set ($parm_plan = $pageParameters.master_plan.singleValue())
+    <!-- get planningManager object and Management Service object -->
+    #set ($dataService = $trackerService.planningManager)
+    #set ($managementService = $testManagementService)
+
+    #set ($parm_plan = $pageParameters.master_plan.singleValue())
+
+    ## Code to use the project/plan section, to allow seeing different projects from a single report.
+
+    #if ($userDefinedProject != "no_project")
+        #set($project = $userDefinedProject)
+    #else
+        #set($project = $page.reference.projectId)
+    #end
+
+    #if ($userDefinedProject != "no_project")
+        #if ($userDefinedPlan != "no_plan")
+            #set ($masterplan_id = $userDefinedPlan)
+            #set ($masterplan = $dataService.getPlan($project, $masterplan_id, null))
+        #else
+            #set ($plans = $dataService.searchPlans("project.id:$project AND NOT HAS_VALUE:parent.id", "created", -1))
+        #end
+    #else
+        #set ($parm_plan = $pageParameters.master_plan.singleValue())
+        #if ($parm_plan)
+            #set ($masterplan_id = $parm_plan.id)
+            #set ($masterplan = $dataService.getPlan($project, $masterplan_id, null))
+        #else
+            #set ($plans = $dataService.searchPlans("project.id:$project AND NOT HAS_VALUE:parent.id", "created", -1))
+        #end
+    #end
+
+    #set ($tabledata = [])
+    #set($totalsMap = $hashmap.clone())
+    #foreach ($result in ["planned", "passed", "failed", "blocked", "notrun", "other", "runs", "runsnotrun", "runsinprogress", "runsfinished", "runsother"])
+        #set ($discard = $totalsMap.put($result, 0))
+    #end
+    ##set ($trfields = ["arch", "variant", "os"])
+    ##set ($tcfields = ["casecomponent", "caseautomation"])
+
+
+    <!-- determine sort order
+    some sort options: 'created', 'startDate' 
+      -->
+
+
+    #set ($totplanned = 0)
+    #set ($totnotrun = 0)
+    #set ($totpassed = 0)
+    #set ($totfailed = 0)
+    #set ($totblocked = 0)
+    #set ($tottestruns = 0)
+    #set ($tottestrunsnotrun = 0)
+    #set ($tottestrunsinprogress = 0)
+    #set ($tottestrunsfinished = 0)
+
+    #if ($$masterplan)
+	    #buildData($masterplan $tabledata "Total")
+    #else
+        ##foreach($plan in $plans)
+		    ##buildData($plan $tabledata "Subtotal")
+	    ##end
+        #buildData("" $tabledata "Subtotal")
+        #if ($totplanned == "*" || $totplanned == 0)
+        	#set ($execperc = "*")
+        	#set ($qualperc = "*")
+        #else
+        	#set ($executedperc = 100 - (($totnotrun * 100) / $totplanned))
+        	#set ($qualityperc = ($totpassed * 100) / $totplanned)
+		    #set ($execperc = "$executedperc%")
+            #set ($qualperc = "$qualityperc%")
+        #end
+        ##$tabledata.add(["", "Total", "", "$totplanned", "$totpassed", "$totfailed", "$totblocked", "$totnotrun", $execperc, $qualperc])
+    #end
+    #set ($discard = $pageContext.put("display_charts", $pageParameters.get("Display_Charts").value))
+    #$!pageContext.put("project", $project)
+    #$!pageContext.put("tabledata", $tabledata)
+    #$!pageContext.put("totalsMap", $totalsMap)
+
+
+    ## Code to use the project/plan section, to allow seeing different projects from a single report.
+
+    #if ($userDefinedProject != "no_project")
+        #set($project = $userDefinedProject)
+    #else
+        #set($project = $page.reference.projectId)
+    #end
+
+    #if ($userDefinedProject != "no_project")
+        #if ($userDefinedPlan != "no_plan")
+            #set ($masterplan_id = $userDefinedPlan)
+            #set ($masterplan = $dataService.getPlan($project, $masterplan_id, null))
+        #else
+            #set ($plans = $dataService.searchPlans("project.id:$project AND NOT HAS_VALUE:parent.id", "created", -1))
+        #end
+    #else
+        #set ($parm_plan = $pageParameters.master_plan.singleValue())
+        #if ($parm_plan)
+            #set ($masterplan_id = $parm_plan.id)
+            #set ($masterplan = $dataService.getPlan($project, $masterplan_id, null))
+        #else
+            #set ($plans = $dataService.searchPlans("project.id:$project AND NOT HAS_VALUE:parent.id", "created", -1))
+        #end
+    #end
+
+    #set ($tabledata = [])
+    #set($totalsMap = $hashmap.clone())
+    #foreach ($result in ["planned", "passed", "failed", "blocked", "notrun", "other", "runs", "runsnotrun", "runsinprogress", "runsfinished", "runsother"])
+        #set ($discard = $totalsMap.put($result, 0))
+    #end
+    ##set ($trfields = ["arch", "variant", "os"])
+    ##set ($tcfields = ["casecomponent", "caseautomation"])
+
+
+    <!-- determine sort order
+    some sort options: 'created', 'startDate' 
+      -->
+
+
+    #set ($totplanned = 0)
+    #set ($totnotrun = 0)
+    #set ($totpassed = 0)
+    #set ($totfailed = 0)
+    #set ($totblocked = 0)
+    #set ($tottestruns = 0)
+    #set ($tottestrunsnotrun = 0)
+    #set ($tottestrunsinprogress = 0)
+    #set ($tottestrunsfinished = 0)
+
+    #if ($$masterplan)
+	    #buildData($masterplan $tabledata "Total")
+    #else
+        ##foreach($plan in $plans)
+		    ##buildData($plan $tabledata "Subtotal")
+	    ##end
+        #buildData("" $tabledata "Subtotal")
+        #if ($totplanned == "*" || $totplanned == 0)
+        	#set ($execperc = "*")
+        	#set ($qualperc = "*")
+        #else
+        	#set ($executedperc = 100 - (($totnotrun * 100) / $totplanned))
+        	#set ($qualityperc = ($totpassed * 100) / $totplanned)
+		    #set ($execperc = "$executedperc%")
+            #set ($qualperc = "$qualityperc%")
+        #end
+        ##$tabledata.add(["", "Total", "", "$totplanned", "$totpassed", "$totfailed", "$totblocked", "$totnotrun", $execperc, $qualperc])
+    #end
+    #set ($discard = $pageContext.put("display_charts", $pageParameters.get("Display_Charts").value))
+    #$!pageContext.put("project", $project)
+    #$!pageContext.put("tabledata", $tabledata)
+    #$!pageContext.put("totalsMap", $totalsMap)
+#end
+
+##Function getTestRunDataPlan builds the data array and sums the data. 
+#macro(getTestRunDataPlan $myplan $data)
+	#set ($planmap = $hashmap.clone())
+	$!data.add($!planmap)
+	#set($query = "")
+    #if ($myplan == "")
+    	#set ($myplanid = "")
+	$!planmap.put("id", $myplanid)
+        $!planmap.put("name", "No Plan")
+        #set ($query = "NOT HAS_VALUE:plannedin")
+    #else
+    	#set ($myplanid = $myplan.id)
+	$!planmap.put("id", $myplanid)
+        $!planmap.put("name", $myplan.name)
+        #set ($query = "plannedin:$myplan.id")
+    #end
+    $!planmap.put("data", $hashmap.clone())
+    $!planmap.put("subtotal", $hashmap.clone())
+    #set ($substats = $planmap.get("subtotal"))
+    #set ($discard = $substats.put("planned", 0))
+    #set ($discard = $substats.put("passed", 0))
+    #set ($discard = $substats.put("failed", 0))
+    #set ($discard = $substats.put("blocked", 0))
+    #set ($discard = $substats.put("notrun", 0))
+    #set ($query = "$query $testRunFilters AND project.id:$project AND (NOT status:invalid)")
+    #set ($testrunlist = $managementService.searchTestRuns($query, 'created', -1))
+	
+    #foreach( $testrun in $testrunlist)
+      #set ($datakey_tr = "")
+      #foreach ($fld in $trfields)
+          #set ($val = "")
+          #set ($val = $testrun.getCustomField($fld).id)
+          #if ($datakey_tr != "" && $val != "")
+              #set($datakey_tr = "$datakey_tr, ")
+          #end
+          #set ($datakey_tr = "$datakey_tr$val")
+      #end
+      #if (!$planmap.get("data").containsKey($datakey_tr))
+          #set ($discard = $planmap.get("data").put($datakey_tr, $hashmap.clone()))
+      #end
+      ## reset $stats here so it is usable even if the above if isn't hit
+      #set ($trkey = $planmap.get("data").get($datakey_tr))
+      #set ($plannedtest = 0)
+      #set ($passedtest = 0)
+      #set ($notruntest = 0)
+      #set ($failedtest = 0)
+      #set ($blockedtest = 0)
+      #set ($notruntest = 0)
+      #set ($testname = $testrun.id)
+      #set ($startquery = 'TEST_RECORDS:("')
+      #set ($endquery = '",*)')
+      <!-- add up all the planned and not run tests -->
+      
+      #set ($doc=$testrun.document)
+      #if(!$doc.unresolvable)
+          ##The createQueryForAllTestCases and createQueryForNotExecutedTestCases functions dosn't take into account iterations.
+          ## The getAllRecordsForTestCase doesn't take into account dynamic records that weren't executed
+          ## this is ok because iterations don't work for dynamic records.
+          ## Therefore, we get all the cases and then parse through them to get all the records per case.
+          ## We use the higher number because it either shows us the iterations or the dynamic records.
+          #set ($plannedtestsquery = "$testrun.createQueryForAllTestCases() $testCaseFilters")
+          #set ($planned = $trackerService.queryWorkItems($plannedtestsquery, "created"))
+          #set ($allplanned = 0)
+          #foreach($case in $planned)
+            #set ($datakey_tc = "")
+            #foreach ($fld in $tcfields)
+                #set ($val = "")
+                #set ($val = $case.getCustomField($fld).id)
+                #if ($datakey_tc != "" && $val != "")
+                    #set($datakey_tc = "$datakey_tc, ")
+                #end
+                #set ($datakey_tc = "$datakey_tc$val")
+            #end
+            #if (!$trkey.containsKey($datakey_tc))
+                #set ($discard = $trkey.put($datakey_tc, $hashmap.clone()))
+                #set ($stats = $trkey.get($datakey_tc))
+                #set ($discard = $stats.put("planned", 0))
+                #set ($discard = $stats.put("passed", 0))
+                #set ($discard = $stats.put("failed", 0))
+                #set ($discard = $stats.put("blocked", 0))
+                #set ($discard = $stats.put("notrun", 0))
+            #end
+            #set ($stats = $trkey.get($datakey_tc))
+            #set($allrecs = $testrun.getAllRecordsForTestCase($case.id))
+            #foreach ($rec in $allrecs)
+                #if ($rec.result)
+                    #set ($result = $rec.result.id)
+                    #if (!$stats.containsKey($result))
+                        #set ($result = "other")
+                    #end
+                    #set ($curval = $stats.get($result) + 1)
+                    #set ($discard = $stats.put($result, $curval))
+                    #set ($curval = $substats.get($result) + 1)
+                    #set ($discard = $substats.put($result, $curval))
+
+                #end
+            #end
+            #set ($allplanned = $allplanned + $allrecs.size)
+          #end
+          #if ($planned.size > $allplanned)
+              #set ($plannedtest = $planned.size)
+          #else
+              #set ($plannedtest = $allplanned)
+          #end
+          #set ($curval = $stats.get("planned") + $plannedtest)
+          #set ($discard = $stats.put("planned", $curval))
+          #set ($curval = $substats.get("planned") + $plannedtest)
+          #set ($discard = $substats.put("planned", $curval))
+          #set ($notruntestsquery = "$testrun.createQueryForNotExecutedTestCases() $testCaseFilters")
+          #set ($notrun = $trackerService.queryWorkItems($notruntestsquery, "created"))
+          #set ($allnotrun = 0)
+          #foreach($case in $notrun)
+              #set($allrecs = $testrun.getAllRecordsForTestCase($case.id))
+              #foreach ($rec in $allrecs)
+                  #if (!$rec.result)
+                      #set ($allnotrun = $allnotrun + 1)
+                  #end
+              #end
+          #end
+          #if ($notrun.size > $allnotrun)
+              #set ($notruntest = $notrun.size)
+          #else
+              #set ($notruntest = $allnotrun)
+          #end
+          #set ($curval = $stats.get("notrun") + $notruntest)
+          #set ($discard = $stats.put("notrun", $curval))
+          #set ($curval = $substats.get("notrun") + $notruntest)
+          #set ($discard = $substats.put("notrun", $curval))
+      #else
+          #set ($plannedtest = "*")
+          #set ($plannedtestsquery = "")
+          #set ($notruntest = "*")
+          #set ($notruntestsquery = "")
+      #end
+      
+      #set ($tottestruns = $tottestruns + 1)
+      #set ($curval = $totalsMap.get("runs") + 1)
+      #set ($discard = $totalsMap.put("runs", $curval))
+      
+      #if ($testrun.status.id == "notrun")
+          #set ($curval = $totalsMap.get("runsnotrun") + 1)
+          #set ($discard = $totalsMap.put("runsnotrun", $curval))
+      #elseif ($testrun.status.id == "inprogress")
+          #set ($curval = $totalsMap.get("runsinprogress") + 1)
+          #set ($discard = $totalsMap.put("runsinprogress", $curval))
+      #elseif ($testrun.status.id == "finished")
+          #set ($curval = $totalsMap.get("runsfinished") + 1)
+          #set ($discard = $totalsMap.put("runsfinished", $curval))
+      #else
+          #set ($curval = $totalsMap.get("runsother") + 1)
+          #set ($discard = $totalsMap.put("runsother", $curval))
+      #end 
+    #end
+    #set ($curval = $totalsMap.get("planned") + $substats.get("planned"))
+    #set ($discard = $totalsMap.put("planned", $curval))
+    #set ($curval = $totalsMap.get("notrun") + $substats.get("notrun"))
+    #set ($discard = $totalsMap.put("notrun", $curval))
+    #set ($curval = $totalsMap.get("passed") + $substats.get("passed"))
+    #set ($discard = $totalsMap.put("passed", $curval))
+    #set ($curval = $totalsMap.get("failed") + $substats.get("failed"))
+    #set ($discard = $totalsMap.put("failed", $curval))
+    #set ($curval = $totalsMap.get("blocked") + $substats.get("blocked"))
+    #set ($discard = $totalsMap.put("blocked", $curval))
+    
+	#foreach($c_plan in $myplan.getChildren())
+    	#getTestRunDataPlan($c_plan $data)
+    #end
+#end
+
+##Function buildData builds the data array and sums the data. 
+#macro(buildData $myplan $data $totalCaption)
+  #set ($subtotplanned = 0)
+  #set ($subtotnotrun = 0)
+  #set ($subtotpassed = 0)
+  #set ($subtotfailed = 0)
+  #set ($subtotblocked = 0)
+  #set ($subtottestruns = 0)
+  #getTestRunDataPlan($myplan $data)
+  #if ($subtotplanned == "*" || $subtotplanned == 0)
+  	#set ($execperc = "*")
+  	#set ($qualperc = "*")
+  #else
+  	#set ($executedperc = 100 - (($subtotnotrun * 100) / $subtotplanned))
+  	#set ($qualityperc = ($subtotpassed * 100) / $subtotplanned)
+  	#set ($execperc = "$executedperc%")
+  	#set ($qualperc = "$qualityperc%")
+  #end
+  ##$data.add(["", $totalCaption, "", "$subtotplanned", "$subtotpassed", "$subtotfailed", "$subtotblocked", "$subtotnotrun", $execperc, $qualperc])
+  #set ($totplanned = $totplanned + $subtotplanned)
+  #set ($totnotrun = $totnotrun + $subtotnotrun)
+  #set ($totpassed = $totpassed + $subtotpassed)
+  #set ($totfailed = $totfailed + $subtotfailed)
+  #set ($totblocked = $totblocked + $subtotblocked)
+#end
+
+

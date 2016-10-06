@@ -1,0 +1,14 @@
+#macro (getFilters)
+  #import("public_filtersComponent.vm")
+
+  #set($componentID = "data_grid_1")
+  #set($filtersData = $pageContext.get("filtersData_${componentID}"))
+  #set($submittedFilters = $pageContext.get("submittedFilters_${componentID}"))
+
+  #buildJSEnvironment()
+
+  #if($filtersData.size() > 0)
+     #buildHtml()
+  #end
+#end
+

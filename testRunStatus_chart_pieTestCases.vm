@@ -1,0 +1,24 @@
+#macro (buildChart)
+    #if ($pageContext.get("display_charts") == true)
+        #set($totalsMap = #$!pageContext.get("totalsMap"))
+        
+        
+        #set($html1 = $renderingContext.createHtmlFragmentBuilder())
+        #set($chart = $renderingContext.createChartBuilder())
+        #set($pie = $chart.pie().name("$totalsMap.get('planned') Test Cases Planned"))
+        
+        #set ($discard = $pie.addValue("$totalsMap.get('passed') Passed", $totalsMap.get('passed')))
+        $!pie.addValue("$totalsMap.get('failed') Failed", $totalsMap.get('failed')).null
+        $!pie.addValue("$totalsMap.get('blocked') Blocked", $totalsMap.get('blocked')).null
+        $!pie.addValue("$totalsMap.get('notrun') Not Run", $totalsMap.get('notrun')).null
+        #if ($totalsMap.get('other') > 0)
+            $!pie.addValue("$totalsMap.get('other') Other", $totalsMap.get('other')).null
+        #end
+        $!chart.build().title().text("$totalsMap.get('planned') Test Cases Planned").null
+        $!chart.build().plotOptions().pie().addRawAttribute("tooltip", "{pointFormat: '<b>{point.y}</b>'}").null
+        $!chart.build().plotOptions().pie().addRawAttribute("size", "200").null
+        $!chart.build().render($html1, 300, $renderingContext.columnWidth).null
+        
+        $html1
+    #end
+#end

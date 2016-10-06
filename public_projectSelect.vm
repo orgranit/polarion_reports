@@ -1,0 +1,422 @@
+
+#macro (getProjectSelect)
+    #if ($page.reference.projectId == "pylarion")
+        #set($componentID = "project_select")
+        #set($filtersData = $!pageContext.get("filtersData_${componentID}"))
+        #set($submittedFilters = $!pageContext.get("submittedFilters_${componentID}"))
+
+        #set ($allProjects = $trackerService.getProjectsService().searchProjects("", "name"))
+        #set ($filtersData = [])
+        #foreach ($proj in $allProjects)
+            #set ($projData = [$proj.name, $proj.id,[]])
+            #set ($planData = $projData.get(2))
+            #set ($plans = $trackerService.getPlanningManager().searchPlans("project.id:$proj.id", "created", -1))
+            #foreach ($plan in $plans)
+	            #set ($discard = $planData.add([$plan.name, $plan.id, [], true, true]))
+            #end
+            #set ($discard = $filtersData.add($projData))
+        #end
+
+        #buildJSEnvironment()
+
+        #if($filtersData.size() > 0)
+           #buildHtml()
+        #end
+    #end
+#end
+
+#macro( buildHtml)
+  <style type="text/css">
+      div.inline { display: inline-block; }
+  </style>
+  <div class="inline">
+      <fieldset>
+          <label for="types">Project</label>
+          <select style="vertical-align: text-top;" id="typesDropDown_${componentID}">
+              <option value="default" disabled="true" selected="true"> -- select an option -- </option>
+          </select>
+          <label for="fields">Plan</label>
+          <select style="vertical-align: text-top;" disabled="true" id="fieldsDropDown_${componentID}">
+              <option value="default" disabled="true" selected="true"> -- select an option -- </option>
+          </select>
+          <select multiple="multiple" hidden="true" style="vertical-align: text-top; height:25px" disabled="true" id="valuesDropDown_${componentID}">
+              <option value="default" disabled="true" selected="true"> -- select an option -- </option>
+          </select>
+          <input type="text" hidden="true" onblur="checkTextField_${componentID}(this)" id="valuesTextInput_${componentID}">
+          <button type="button" disabled="true" onclick="applyFilters_${componentID}()" style="float: right;" id="addFilterButton_${componentID}">Submit</button>
+
+          <ul style="list-style-type:circle" id="filtersToSubmitHtmlList_${componentID}"></ul>
+
+          <button type="button" hidden="true" onclick="applyFilters_${componentID}()">Submit Fields</button>
+          <button type="button" hidden="true" onclick="saveAsDefault_${componentID}()" style="float: right;">Save as Default</button>
+      </fieldset>
+  </div>
+#end
+
+#macro( buildFiltersDataJS)
+  // Builds filters data
+  #foreach($filterData in $filtersData)
+    var filterType = "$filterData.get(0)";
+    var filterPolarionType = "$filterData.get(1)";
+    #set($filterFields = $filterData.get(2))
+    var filterFields = [];
+
+    // Builds filter fields
+    #foreach($filterField in $filterFields)
+      var filterFieldType = "$filterField.get(0)";
+      var filterFieldPolarionType = "$filterField.get(1)";
+      #set($filterValues = $filterField.get(2))
+      var filterValues = [];
+      var filterFieldIsEnum = $filterField.get(3);
+      var filterFieldIsCustom = $filterField.get(4);
+
+      // Builds filter field values
+      #foreach($filterValue in $filterValues)
+          filterValues.push("$filterValue");
+      #end
+
+      var filterField = {
+        type : filterFieldType,
+        polarionType : filterFieldPolarionType,
+        values : filterValues,
+        isCustom : filterFieldIsCustom,
+        isEnum : filterFieldIsEnum
+       }
+       if(filterField.isEnum && filterField.isCustom){
+           filterFields.push(filterField);
+       }
+       
+    #end
+
+    var filterData = {
+      type : filterType,
+      polarionType : filterPolarionType,
+      fields : filterFields
+     }
+    filtersData_${componentID}.push(filterData);
+  #end
+#end
+
+#macro( buildSubmittedFiltersJS)
+  #foreach($submittedFilter in $submittedFilters)
+    var filterType = "$submittedFilter.get(0)";
+    var filterField = "$submittedFilter.get(1)";
+    var filterValues = "$submittedFilter.get(2)";
+    var filterId = filterType + "_" + filterField + "_${componentID}";
+    var filterStr = filterType + ":" + filterField;
+    var filterIsCustom = $submittedFilter.get(3);
+    filterToSubmit = {
+      type : filterType,
+      field : filterField,
+      values : filterValues,
+      isCustom : filterIsCustom,
+      id : filterId,
+      str : filterStr
+    }
+    filtersToSubmit_${componentID}.push(filterToSubmit);
+  #end
+#end
+
+#macro( buildJSEnvironment)
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.0/jquery.min.js"></script>
+  <script>
+      var $j = jQuery.noConflict();
+      var DEFAULT_OPTION = '<option value="default" disabled="true" selected="true"> -- select an option -- </option>';
+
+      var selectedFilter_${componentID} = {type : null, field : null, values : null};
+
+      var filtersData_${componentID} = [];
+      #buildFiltersDataJS()
+
+      var filtersToSubmit_${componentID} = [];
+      #buildSubmittedFiltersJS()
+
+
+      var myPageParmeter_${componentID} = "";
+
+
+      $j(document).ready(function(){
+           setPageParameter_${componentID}();
+
+          // Hides the Page parameter
+          $j(myPageParmeter_${componentID}).prop('hidden', true);
+
+          //Add 'filtersToSubmit' to html
+          //filtersToSubmit_${componentID}.forEach(addFilterToHtml_${componentID});
+          
+
+          //Add filterTypes to html
+          buildFilterTypesDropDown_${componentID}();
+          
+          if(filtersToSubmit_${componentID}.length > 0 ){
+            var filterProj = filtersToSubmit_${componentID}[0];
+            $j('#typesDropDown_${componentID} option[value=' + filterProj.type + ']').attr('selected','selected');
+            selectedFilter_${componentID}.type = getSelectedTypeData_${componentID}($j("#typesDropDown_${componentID} option:selected").val());
+            resetDropDownFields_${componentID}();
+            buildFilterFieldsDropDown_${componentID}(selectedFilter_${componentID}.type.fields);
+            $j('#fieldsDropDown_${componentID} option[value=' + filterProj.field + ']').attr('selected','selected');
+          }
+			
+
+          /*
+           this function is being called when new filter type is selected
+           it ends up displaying the selected type's fields.
+           */
+          $j("#typesDropDown_${componentID}").change(function(){
+              if($j("#typesDropDown_${componentID} option:selected").val() != 'default'){
+                  selectedFilter_${componentID}.type = getSelectedTypeData_${componentID}($j("#typesDropDown_${componentID} option:selected").val());
+                  resetDropDownFields_${componentID}();
+                  buildFilterFieldsDropDown_${componentID}(selectedFilter_${componentID}.type.fields);
+              }
+          });
+
+          /*
+           this function is being called when a new filter field is selected
+           for example "Variant" for filter type "TestRun".
+           it ends up displaying the selected field's allowed values (enum values or free_text input).
+           */
+          $j("#fieldsDropDown_${componentID}").change(function(){
+              //resetTextInputValues_${componentID}();
+              //resetDropDownValues_${componentID}();
+
+              if($j("#typesDropDown_${componentID} option:selected").val() != 'default'){
+                  $j("#addFilterButton_${componentID}").prop('disabled', false);
+              } else {
+                 $j("#addFilterButton_${componentID}").prop('disabled', true); 
+              }
+          });
+
+          /*
+           this function is being called when new filter enum value is selected
+           for example "server" for field "Variant" for filter type "TestRun"
+           it ends up enabling the 'addFilterButton'.
+           */
+          $j("#valuesDropDown_${componentID}").change(function(){
+              if($j("#typesDropDown_${componentID} option:selected").val() != 'default'){
+                  selectedFilter_${componentID}.values = "values";
+                  $j("#addFilterButton_${componentID}").prop('disabled', false);
+              } else {
+                  $j("#addFilterButton_${componentID}").prop('disabled', true);
+              }
+          });
+      });
+
+      /*
+        this function sets this component pageParameter
+       */
+      function setPageParameter_${componentID}(){
+        $j(".polarion-rpe-ParameterEditor-outerPanel").each(function(){
+           if($j(this).find("#gwt-debug-polarion-ParameterEditor-label").text() == "$componentID"){
+              myPageParmeter_${componentID} = this;
+           }
+        });
+      }
+
+      /*
+        this function adds filter to the filtersToSubmitList and to the html
+       */
+      function addFilter_${componentID}(filterToSubmit){
+      		console.log(filterToSubmit);
+          var filterType = selectedFilter_${componentID}.type.type;
+          var filterField = selectedFilter_${componentID}.field.polarionType;;
+          var filterValues = selectedFilter_${componentID}.values;
+          var filterId = filterType + "_" + filterField + "_${componentID}";
+          var filterStr = filterType + ":" + filterField;
+          console.log(filterToSubmit);
+          var filterIsCustom = selectedFilter_${componentID}.field.isCustom;
+          filterToSubmit = {
+            type : filterType,
+            field : filterField,
+            values : filterValues,
+            isCustom : filterIsCustom,
+            id : filterId,
+            str : filterStr
+          }
+
+          result = filtersToSubmit_${componentID}.filter(function(filter) {
+              return filter.id == filterToSubmit.id;
+          });
+		   
+           
+          console.log(filterToSubmit);
+          // saving it if it doesnt exists already
+          if(result.length == 0){
+              filtersToSubmit_${componentID}.push(filterToSubmit);
+              addFilterToHtml_${componentID}(filterToSubmit);
+          }
+
+          resetDropDownTypes_${componentID}();
+
+      }
+
+      /*
+        this function adds the filter to the html list (with a remove button)
+       */
+      function addFilterToHtml_${componentID}(filterToSubmit){
+          $j("#filtersToSubmitHtmlList_${componentID}").append("<li id=" + filterToSubmit.id +">" + filterToSubmit.str + " <button type=\"button\"" +
+                  "name=\"" + filterToSubmit.id + "\" onclick=\"removeFilter_${componentID}(this)\">Remove</button></li>");
+      }
+
+      /*
+        this function removes a filter from the html and from 'filtersToSubmit'
+       */
+      function removeFilter_${componentID}(button){
+          $j("#" + button.name).remove();
+          filtersToSubmit_${componentID} = filtersToSubmit_${componentID}.filter(function(x) {
+              return x.id !== button.name;
+          });
+      }
+
+      /*
+       this function builds the filter-types drop-down
+       */
+      function buildFilterTypesDropDown_${componentID}() {
+          filtersData_${componentID}.forEach(function(filterData){
+            var element = { name : filterData.type.replace("_", " "), id : filterData.polarionType }
+            addElementToSelect_${componentID}(element ,"#typesDropDown_${componentID}");
+          });
+      }
+
+      /*
+       this function choose which fields to display based on 'filterType'
+       */
+      function buildFilterFieldsDropDown_${componentID}(filterFieldsInSelect){
+          addElementToSelect_${componentID}({ name: "No Plan", id: "no_plan"},"#fieldsDropDown_${componentID}");
+          filterFieldsInSelect.forEach(function(field){
+            var element = { name : field.type, id : field.polarionType }
+            addElementToSelect_${componentID}(element ,"#fieldsDropDown_${componentID}");
+          });
+          $j("#fieldsDropDown_${componentID}").prop('disabled', false);
+      }
+
+      /*
+       this function choose which values to display based on 'filterType'
+       */
+      function buildFilterValuesDropDown_${componentID}(filterValuesInSelect){
+          filterValuesInSelect.forEach(function(value){
+            var element = { name : value, id : value }
+            addElementToSelect_${componentID}(element ,"#valuesDropDown_${componentID}");
+          });
+          $j("#valuesDropDown_${componentID}").prop('disabled', true);
+      }
+
+      /*
+       this function finds selected filter-type data
+       */
+      function getSelectedTypeData_${componentID}(selectedType){
+        var selectedTypeData;
+        for(var i = 0; i < filtersData_${componentID}.length; i++){
+           if(filtersData_${componentID}[i].polarionType == selectedType){
+             selectedTypeData = filtersData_${componentID}[i]
+           }
+        }
+
+        return selectedTypeData;
+      }
+
+      /*
+       this function finds selected filter-field data
+       */
+      function getSelectedFieldData_${componentID}(selectedField){
+        var selectedFieldData;
+        selectedFilter_${componentID}.type.fields.forEach(function(field){
+          if(selectedField == field.polarionType){
+            selectedFieldData = field;
+          }
+        });
+
+        return selectedFieldData;
+      }
+
+      /*
+       this function adds a new element to 'html select'
+       */
+      function addElementToSelect_${componentID}(currrentElement, selectType) {
+          $j(selectType).append($j("<option></option>").attr("value", currrentElement.id).text(currrentElement.name));
+      }
+
+      function resetDropDownTypes_${componentID}(){
+          $j("#typesDropDown_${componentID}").val("default");
+          resetDropDownFields_${componentID}();
+      }
+
+      function resetDropDownFields_${componentID}(){
+          $j("addFilterButton_${componentID}").prop('disabled', true);
+          $j("#fieldsDropDown_${componentID}").find('option').remove().end().append(DEFAULT_OPTION)
+          $j("#fieldsDropDown_${componentID}").val("default");
+          $j("#fieldsDropDown_${componentID}").prop('disabled', true);
+          resetTextInputValues_${componentID}();
+          resetDropDownValues_${componentID}();
+      }
+
+      function resetTextInputValues_${componentID}(){
+          $j("#valuesTextInput_${componentID}").val("");
+          $j("#valuesTextInput_${componentID}").prop('hidden', true);
+          $j("#addFilterButton_${componentID}").prop('disabled', true);
+      }
+
+      function resetDropDownValues_${componentID}(){
+          $j("#valuesDropDown_${componentID}").find('option').remove().end().append(DEFAULT_OPTION)
+          $j("#valuesDropDown_${componentID}").val("default");
+          $j("#valuesDropDown_${componentID}").prop('hidden', true);
+          $j("#valuesDropDown_${componentID}").prop('disabled', true);
+          $j("#valuesDropDown_${componentID}").height(25);
+          $j("#addFilterButton_${componentID}").prop('disabled', true);
+      }
+
+      /*
+       this function is being called when the 'free_text' input is changed.
+       for example some text has been typed by the user to 'TestRun' 'Description' field.
+       it ends up enabling the 'add_filter_button' if the 'free_text' input isn't empty.
+       */
+      function checkTextField_${componentID}(field) {
+          if (field.value == '') {
+              $j("#addFilterButton_${componentID}").prop('disabled', true);
+          } else {
+              selectedFilter_${componentID}.values = $j("#valuesTextInput_${componentID}").val();
+              $j("#addFilterButton_${componentID}").prop('disabled', false);
+          }
+      }
+
+      /*
+       this function saves the filters as defaults
+      */
+      function applyFilters_${componentID}(){
+ 		  filtersToSubmit_${componentID} = [];    	
+          filterToSubmit = {
+              type : $j("#typesDropDown_${componentID} option:selected").val(),
+              field : $j("#fieldsDropDown_${componentID} option:selected").val(),
+              values : ["value"],
+              isCustom : true
+    	  }
+          filtersToSubmit_${componentID}.push(filterToSubmit);
+          $j(myPageParmeter_${componentID}).find("#gwt-debug-polarion-StringParameterImpl-input").val(stringify_${componentID}(filtersToSubmit_${componentID}));
+          $j(".polarion-rpe-pageParametersForm-applyButton > tbody:nth-child(2) > tr:nth-child(1) > td:nth-child(2) > div:nth-child(1)").click();
+      }
+
+      /*
+       this function saves the filters as defaults
+      */
+      function saveAsDefault_${componentID}(){
+          $j(myPageParmeter_${componentID}).find("#gwt-debug-polarion-StringParameterImpl-input").val(stringify_${componentID}(filtersToSubmit_${componentID}));
+          $j(".polarion-rpe-pageParametersForm-saveAsDefaultButton > tbody:nth-child(2) > tr:nth-child(1) > td:nth-child(2) > div:nth-child(1)").click();
+      }
+
+      /*
+       this function take the chossen filters and "Hash" them into a string
+       we will later parse.
+      */
+      function stringify_${componentID}(filters){
+          var filtersStr = "";
+          for (var i = 0; i < filters.length; i++) {
+              filtersStr += filters[i].type + "#single#";
+              filtersStr += filters[i].field + "#single#";
+              filtersStr += filters[i].values + "#single#"
+              filtersStr += filters[i].isCustom + "#multi#";
+          }
+
+         return filtersStr;
+      }
+  </script>
+#end
+        

@@ -1,0 +1,346 @@
+#macro (runPageScript)
+
+  #import("public_filtersPageScript.vm")
+  #import("public_projectPlanDropDowns.vm")
+
+
+  #**
+      This section purpose is to collect data using polarion API as soon as the page is loaded
+  *#
+
+  #**
+    All the data from polarion
+    Eventually it will be in the form of '[$filterType1, $filterType4, $filterType3, ...]'
+    where '$filterType' is in the form of '["Test Run", "TestRun", [$filterField1, $filterField2, $filterField3,  ...] ]'
+    where '$filterFields' is in the form of '["Asignee", "asignee", $values, true, true]' (the last 2 variables are "isEnum" "isCustom")
+    where '$values' is in the form of '["szacks, ogranit, oramraz, ..."]'
+  *#
+
+
+  #**
+      the following 5 lines are to set 5 global variables.
+      'hashmap' - pageContext map
+      'polarionData' - all the data from polarion (for more info see above comment)
+      'filtersOn' - the value of the boolean pageParmeter 'Filters_ON'
+      'customFieldsService' - polarion service which provides custom fields
+      'context' - polarion object that is passed as an argument to 'customFieldsService'. it is extracted
+                  from an empty TestRun (which is contained in every project)
+  *#
+  #set ($hashmap = $pageContext.clone())
+  #set($polarionData = [])
+  #set($filtersOn = $pageParameters.get("Filters_ON" ).value)
+  #set($customFieldsService = $trackerService.getDataService().getCustomFieldsService())
+  #set($context = $testManagementService.getTestRun($page.reference.projectId, "empty").getContextId())
+
+
+  ## ================================================   Users Definitions Section ====================================================
+
+  #**
+      In this section is where the user will set its deseired filters.
+      Eventually the user will use these filters in the 'filterizeMyLuceneQuery' and 'filterizeMySQLQuery' macros.
+  *#
+
+  #set($propertyFilterType = 0)
+  #set($propertyPolarionType = 1)
+  #set($propertyPolarionControlValue = 2)
+  #set($propertyIsRole = 3)
+  #set($propertyTableName = 4)
+  #set($propertyTableAlias = 5)
+
+
+
+  #**
+      This is where we set our filters, when we want new filter just set a new one below and add it to 'filtersProperties' array
+      filter structure:
+          [filterType, polarionType, controlValue, isRole, tableName, primaryTableAlias]
+          - filterType: uniqe name without spaces ('Test_Run', 'Test_Case' will be displayed as "Test Run, Test Case")
+          - polarionType: polarion type e.g 'WorkItem'
+          - controlValue: polarion control value e.g 'testcase'
+          - isRole: Flag for filters of 'Role' type
+          - tableName: the SQL table name of this filter type
+          - primaryTableAlias: the SQL primary alias name of this filter type
+  *#
+
+
+
+  ## Set new Filters properties here
+
+  #set($filterTestRun = ["Test_Run", "TestRun", "", false, "TestRun", "TR"])                                ## TestRun Filter
+  #set($filterTestCase = ["Test_Case", "WorkItem", "testcase", false, "WorkItem", "TC"])                   ## TestCase Filter
+  #set($filterRequirement = ["Requirement", "WorkItem", "requirement", false, "WorkItem", "REQ"])        ## Requirement Filter
+  #set($filterPlan = ["Plan", "Plan", "plan", false, "Plan", "plan"])                                           ## Plan Filter
+  #set($filterTeam = ["Team", "", "", true, "USER", "team"])                                                    ## Team Filter
+
+
+  ## Append all filters properties to a List
+  #set($filtersProperties= [$filterTestRun, $filterTestCase, $filterRequirement, $filterPlan, $filterTeam])
+  #collectPolarionData($filtersProperties)
+
+
+    #projectPlanDropDowns()
+
+  #**
+      DO THIS FOR EACH COMPONENT
+      -The first argument is the 'componentID'
+      -The second is array of required filters for the component (the filters that appears in the filters drop-down)
+  *#
+
+  #setFiltersForComponent("data_grid_1" [$filterTestCase])
+  #setFiltersForComponent("data_grid_2" [$filterTestCase])
+
+
+
+  ##================================================  Data Filtering Section ==============================================
+
+  #**
+      How to filterize your query?
+      1. Determine your required filters for this specific query
+      2. if you have a SQL query you need to split the query to 'fromClause' and a 'whereClause' and use 'filterizeMySQLQuery'
+      3. if you have a lucene query you need to use 'filterizeMyLuceneQuery'
+      Note: you can apply multiple filters on each query
+
+     This is an example of a SQL query
+     set($requiredFilters = [$filterTestRun])
+     set($fromClause = "SELECT Distinct TR.C_URI FROM TestRun TR")
+     set($whereClause = "WHERE P.C_ID = '$page.project'")
+     set($componentID = "data_grid_1")
+     filterizeMySQLQuery($requiredFilters $fromClause $whereClause $componentID )
+
+     This is an example of a Lucene query
+     set($requiredFilters = [$filterTestCase])
+     set($query = "type:testcase AND caseimportance.KEY:critical AND project.id:$project")
+     set($componentID = "data_grid_2")
+    filterizeMyLuceneQuery($requiredFilters $query $componentID )
+  *#
+
+  #set($requiredFilters = [$filterTestCase])
+  #set($query1 = "")
+  #filterizeMyLuceneQuery($requiredFilters $query1 "data_grid_1" )
+  $!pageContext.put("filtersRaw_data_grid_1", $query1)
+
+  #set($requiredFilters = [$filterTestCase])
+  #set($query2 = "")
+  #filterizeMyLuceneQuery($requiredFilters $query2 "data_grid_2" )
+  $!pageContext.put("filtersRaw_data_grid_2", $query2)
+
+
+
+  ## ====================================================== User Section =========================================================
+    #if ($userDefinedProject != "no_project")
+        #set($project = $userDefinedProject)
+    #else
+        #set($project = $page.reference.projectId)
+    #end
+    #set ($baseurl = "/polarion/#/project/$project/")
+
+  ##Test Automation PQI
+  #set ($suiteq = "type:testcase AND project.id:$project")
+  #set ($wis = $trackerService.queryWorkItems("$suiteq $query1", "created"))
+  #set ($critical = $hashmap.clone())
+  #set ($hml = $hashmap.clone())
+  #foreach ($hm in [$critical, $hml])
+      #set ($discard = $hm.put("total", 0))
+      #set ($discard = $hm.put("appr", 0))
+      #set ($discard = $hm.put("apprauto", 0))
+      #set ($discard = $hm.put("automated", 0))
+  #end
+
+  #foreach ($wi in $wis)
+      #set ($imp = $wi.getCustomField("caseimportance").id)
+      #set ($auto = $wi.getCustomField("caseautomation").id)
+      #set ($status = $wi.status.id)
+      ## $cnt may change when test suites support is added in.
+      #set ($cnt = 1)
+      #if ($imp == "critical")
+          #set ($hm = $critical)
+      #elseif ($imp == "high" || $imp == "medium" || $imp == "low")
+          #set ($hm = $hml)
+      #end
+      #set ($tot = $hm.get("total") + $cnt)
+      #set ($discard = $hm.put("total", $tot))
+      #if ($status == "approved")
+          #set ($tot = $hm.get("appr") + $cnt)
+          #set ($discard = $hm.put("appr", $tot))
+          #if ($auto == "automated")
+              #set ($tot = $hm.get("apprauto") + $cnt)
+              #set ($discard = $hm.put("apprauto", $tot))
+          #end
+      #end
+      #if ($auto == "automated")
+          #set ($tot = $hm.get("automated") + $cnt)
+          #set ($discard = $hm.put("automated", $tot))
+      #end
+
+  #end
+
+
+  ##Test Status and Progress PQI
+  ## Ugly hack to parse a json result from a test record comment
+  #macro (parseResultJson $json $hm)
+      #set ($json1 = $json.replace("{", "").replace("}", ""))
+      #set ($jsonLst = $json1.split(","))
+      #set ($Int = 0)
+      #foreach ($kvpair in $jsonLst)
+          #set ($key = "")
+          #set ($kv = $kvpair.split(":"))
+          #foreach ($k in $kv)
+             #if ($key == "")
+                 #set ($key = $k.replace('"',"").trim())
+             #elseif ($key == "passed" || $key == "failed" || $key == "blocked")
+                 #set ($discard = $hm.put($key, $Int.parseInt($k.trim())))
+             #end
+          #end
+      #end
+  #end
+
+  ##Function getTestRunDataPlan builds the data array and sums the data.
+  #macro (getTestRunDataPlan $myplan)
+      #set ($planMap = $hashmap.clone())
+      #set($query = "")
+      $tabledata.add($planMap)
+      #if ($myplan == "")
+          #set ($discard = $planMap.put("id", ""))
+          #set ($discard = $planMap.put("name", "No Plan Selected"))
+          #set ($query = "NOT HAS_VALUE:plannedin")
+      #else
+          #set ($discard = $planMap.put("id", $myplan.id))
+          #set ($discard = $planMap.put("name", $myplan.name))
+          #set ($discard = $planMap.put("name_link", "${baseurl}plan?id=$myplan.id"))
+          #set ($query = "plannedin:$myplan.id")
+      #end
+      #set ($discard = $planMap.put("planned", 0))
+      #set ($discard = $planMap.put("attempted", 0))
+      #set ($discard = $planMap.put("notrun", 0))
+      #set ($discard = $planMap.put("passed", 0))
+      #set ($discard = $planMap.put("failed", 0))
+      #set ($discard = $planMap.put("blocked", 0))
+      #set ($discard = $planMap.put("planned_link", "${baseurl}workitems?query="))
+      #set ($discard = $planMap.put("attempted_link", "${baseurl}workitems?query="))
+      #set ($discard = $planMap.put("notrun_link", "${baseurl}workitems?query="))
+      #set ($discard = $planMap.put("passed_link", "${baseurl}workitems?query="))
+      #set ($discard = $planMap.put("failed_link", "${baseurl}workitems?query="))
+      #set ($discard = $planMap.put("blocked_link", "${baseurl}workitems?query="))
+
+      #set ($linkOR = " ")
+      #set ($query = "$query AND project.id:$project AND (NOT status:invalid)")
+      #set ($testrunlist = $managementService.searchTestRuns($query, 'created', -1))
+      #foreach( $testrun in $testrunlist)
+        #set ($doc=$testrun.document)
+        #if(!$doc.unresolvable)
+            ##The createQueryForAllTestCases and createQueryForNotExecutedTestCases functions dosn't take into account iterations.
+            ## The getAllRecordsForTestCase doesn't take into account dynamic records that weren't executed
+            ## this is ok because iterations don't work for dynamic records.
+            ## Therefore, we get all the cases and then parse through them to get all the records per case.
+            ## We use the higher number because it either shows us the iterations or the dynamic records.
+  		  #set ($plannedtestsquery = "$testrun.createQueryForAllTestCases() $query2")
+  		  #set ($attemptedtestsquery = "$testrun.createQueryForAllExecutedTestCases() $query2")
+  		  #set ($passedtestsquery = "$testrun.createQueryForExecutedTestCases('passed') $query2")
+  		  #set ($failedtestsquery = "$testrun.createQueryForExecutedTestCases('failed') $query2")
+  		  #set ($blockedtestsquery = "$testrun.createQueryForExecutedTestCases('blocked') $query2")
+  		  #set ($notruntestsquery = "$testrun.createQueryForNotExecutedTestCases() $query2")
+            #set ($link = $planMap.get("planned_link"))
+            #set ($discard = $planMap.put("planned_link", "$link$linkOR ($plannedtestsquery)"))
+            #set ($link = $planMap.get("attempted_link"))
+            #set ($discard = $planMap.put("attempted_link", "$link$linkOR ($attemptedtestsquery)"))
+            #set ($link = $planMap.get("passed_link"))
+            #set ($discard = $planMap.put("passed_link", "$link$linkOR ($passedtestsquery)"))
+            #set ($link = $planMap.get("failed_link"))
+            #set ($discard = $planMap.put("failed_link", "$link$linkOR ($failedtestsquery)"))
+            #set ($link = $planMap.get("blocked_link"))
+            #set ($discard = $planMap.put("blocked_link", "$link$linkOR ($blockedtestsquery)"))
+            #set ($link = $planMap.get("notrun_link"))
+            #set ($discard = $planMap.put("notrun_link", "$link$linkOR ($notruntestsquery)"))
+            #set ($planned = $trackerService.queryWorkItems($plannedtestsquery, "created"))
+            #set ($linkOR = " OR ")
+
+  		  #set ($allplanned = 0)
+            #set ($lstAllRecs = [])
+  		  #foreach($case in $planned)
+                ## $cnt may change when/if test suites are taken into acount
+                #set ($cnt = 1)
+            	  #set($allrecs = $testrun.getAllRecordsForTestCase($case.id))
+  			  #set ($discard = $lstAllRecs.addAll($allrecs))
+  			  #set ($allplanned = $allplanned + $allrecs.size)
+                #if ($allrecs.size == 0)
+                    #set ($curval = $planMap.get("planned") + $cnt)
+                    #set ($discard = $planMap.put("planned", $curval))
+                    #set ($curval = $planMap.get("notrun") + $cnt)
+                    #set ($discard = $planMap.put("notrun", $curval))
+                #else
+                    #foreach ($rec in $allrecs)
+                        #set ($curval = $planMap.get("planned") + $cnt)
+                        #set ($discard = $planMap.put("planned", $curval))
+                        #set ($resultMap = $hashmap.clone())
+                        #if ($resultMap.containsKey("passed") && $resultMap.containsKey("failed") && $resultMap.containsKey("blocked"))
+                            #set ($curval = $planMap.get("attempted") + $resultMap.get("passed") + $resultMap.get("failed") + $resultMap.get("blocked"))
+                            #set ($discard = $planMap.put("attempted", $curval))
+                            #foreach ($result in ["passed", "failed", "blocked"])
+                                #set ($curval = $planMap.get($result) + $resultMap.get($result))
+                                #set ($discard = $planMap.put($result, $curval))
+                            #end
+                        #elseif ($rec.result)
+                            #set ($curval = $planMap.get("attempted") + $cnt)
+                            #set ($discard = $planMap.put("attempted", $curval))
+                            #set ($curval = $planMap.get($rec.result.id) + $cnt)
+                            #set ($discard = $planMap.put($rec.result.id, $curval))
+                        #else
+                            #set ($curval = $planMap.get("notrun") + $cnt)
+                            #set ($discard = $planMap.put("notrun", $curval))
+                        #end
+                    #end
+                #end
+            #end
+        #end
+      #end
+  	#foreach($c_plan in $myplan.getChildren())
+      	#getTestRunDataPlan($c_plan)
+      #end
+  #end
+
+  <!-- get planningManager object and Management Service object -->
+  #set ($dataService = $trackerService.planningManager)
+  #set ($managementService = $testManagementService)
+
+    #if ($userDefinedProject != "no_project")
+        #if ($userDefinedPlan != "no_plan")
+            #set ($masterplan_id = $userDefinedPlan)
+            #set ($masterplan = $dataService.getPlan($project, $masterplan_id, null))
+        #else
+            #set ($plans = $dataService.searchPlans("project.id:$project AND NOT HAS_VALUE:parent.id", "created", -1))
+        #end
+    #else
+        #set ($parm_plan = $pageParameters.master_plan.singleValue())
+        #if ($parm_plan)
+            #set ($masterplan_id = $parm_plan.id)
+            #set ($masterplan = $dataService.getPlan($project, $masterplan_id, null))
+        #else
+            #set ($plans = $dataService.searchPlans("project.id:$project AND NOT HAS_VALUE:parent.id", "created", -1))
+        #end
+    #end
+  #set($tabledata = [])
+
+
+
+  <!-- determine sort order
+  some sort options: 'created', 'startDate'
+    -->
+
+  #if ($masterplan)
+      #getTestRunDataPlan($masterplan)
+  #else
+      ##foreach($plan in $plans)
+  		##getTestRunDataPlan($plan)
+  	##end
+    #getTestRunDataPlan("")
+  #end
+
+
+  ##Results
+  #set ($discard = $pageContext.put("display_charts", $pageParameters.get("Display_Charts").value))
+  #set ($discard = $pageContext.put("critical", $critical))
+  #set ($discard = $pageContext.put("hml", $hml))
+  #set ($discard = $pageContext.put("project", $project))
+  #set ($discard = $pageContext.put("tabledata", $tabledata))
+  #set ($discard = $pageContext.put("hashmap", $hashmap.clone()))
+
+#end

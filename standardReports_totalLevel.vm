@@ -1,0 +1,55 @@
+#macro (totalLevel)
+    #set ($byLevel = $pageContext.get("byLevel"))
+    #set ($levels = $pageContext.get("levels"))
+    #set ($hm = $pageContext.get("hashmap"))
+    #set ($project = $pageContext.get("project"))
+
+
+    #if ($pageContext.get("display_charts") == true)
+
+        #set($html1 = $renderingContext.createHtmlFragmentBuilder())
+        #set($chart = $renderingContext.createChartBuilder())
+        #set($pie = $chart.pie().name("Test Case by Level"))
+        
+        #foreach ($row in $byLevel.keySet())
+            $!pie.addValue($levels.get($row),$byLevel.get($row)).null
+        #end
+        
+        
+        $!chart.build().title().text("Test Case by Level").null
+        $!chart.build().plotOptions().pie().addRawAttribute("tooltip", "{pointFormat: '<b>{point.y}</b>'}").null
+        $!chart.build().plotOptions().pie().addRawAttribute("size", "200").null
+        $!chart.build().render($html1, 300, $renderingContext.columnWidth).null
+        
+        $html1
+    #end
+
+    #set ($alllevels = "")
+    #foreach ($l  in $levels.keySet())
+        #set ($alllevels = "$alllevels $l")
+    #end
+    <table border=2>
+        <tr>
+            <th>Category</th>
+            <th>Number of Tests</th>
+        </tr>
+        #set ($tot = 0)
+        #foreach ($row in $byLevel.keySet())
+        	#if ($row != "")
+               #set ($qlvl = "caselevel.KEY:$row")
+            #else
+               #set ($qlvl = "NOT caselevel.KEY:($allnonfunc)")
+            #end
+            #set ($href = "<a href='/polarion/#/project/$project/workitems/testcase?query=type:(testcase testsuite) $qlvl'>")
+            <tr>
+                <td>$levels.get($row)</td>
+                <td>$href$byLevel.get($row)</a></td>
+                #set ($tot = $tot + $byLevel.get($row))
+            </tr>
+        #end
+        <tr>
+            <td>Total</td>
+            <td>$tot</td>
+        </tr>
+    </table>
+#end

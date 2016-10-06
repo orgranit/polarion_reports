@@ -1,0 +1,336 @@
+#macro (runPageScript)
+
+  #import("public_filtersPageScript.vm")
+  #import("public_projectPlanDropDowns.vm")
+
+    #set ($hashmap = $pageContext.clone())
+    #set($polarionData = [])
+    #set($filtersOn = $pageParameters.get("Filters_ON" ).value)
+    #**
+        the following 2 lines are to set 2 global variables which will be used in 'collectCustomFieldsData' macro
+        'customFieldsService' - polarion service which provides custom fields
+        'context' - polarion object that is passed as an argument to 'customFieldsService'. it is extracted
+                    from an empty TestRun (which is contained in every project)
+    *#
+
+    #set($customFieldsService = $trackerService.getDataService().getCustomFieldsService())
+    #set($context = $testManagementService.getTestRun($page.reference.projectId, "empty").getContextId())
+
+
+    ## ================================================   Users Definitions Section ====================================================
+
+    #**
+        In this section is where the user will set its deseired filters.
+        Eventually the user will use these filters in the 'filterizeMyLuceneQuery' and 'filterizeMySQLQuery' macros.
+    *#
+
+    #set($propertyFilterType = 0)
+    #set($propertyPolarionType = 1)
+    #set($propertyPolarionControlValue = 2)
+    #set($propertyIsRole = 3)
+    #set($propertyTableName = 4)
+    #set($propertyTableAlias = 5)
+
+
+
+    #**
+        This is where we set our filters, when we want new filter just set a new one below and add it to 'filtersProperties' array
+        filter structure:
+            [filterType, polarionType, controlValue, isRole, tableName, primaryTableAlias]
+            - filterType: uniqe name without spaces ('Test_Run', 'Test_Case' will be displayed as "Test Run, Test Case")
+            - polarionType: polarion type e.g 'WorkItem'
+            - controlValue: polarion control value e.g 'testcase'
+            - isRole: Flag for filters of 'Role' type
+            - tableName: the SQL table name of this filter type
+            - primaryTableAlias: the SQL primary alias name of this filter type
+    *#
+
+
+
+    ## Set new Filters properties here
+
+    #set($filterTestRun = ["Test_Run", "TestRun", "", false, "TestRun", "TR"])                                ## TestRun Filter
+    #set($filterTestCase = ["Test_Case", "WorkItem", "testcase", false, "WorkItem", "TC"])                   ## TestCase Filter
+    #set($filterRequirement = ["Requirement", "WorkItem", "requirement", false, "WorkItem", "REQ"])        ## Requirement Filter
+    #set($filterPlan = ["Plan", "Plan", "plan", false, "Plan", "plan"])                                           ## Plan Filter
+    #set($filterTeam = ["Team", "", "", true, "USER", "team"])                                                    ## Team Filter
+
+
+    ## Append all filters properties to a List
+    #set($filtersProperties= [$filterTestRun, $filterTestCase, $filterRequirement, $filterPlan, $filterTeam])
+    #collectPolarionData($filtersProperties)
+
+
+
+    #projectPlanDropDowns()
+
+
+    #**
+        DO THIS FOR EACH COMPONENT
+        -The first argument is the 'componentID'
+        -The second is array of required filters for the component (the filters that appears in the filters drop-down)
+    *#
+
+    #setFiltersForComponent("data_grid_1" [$filterTestRun, $filterTestCase])
+
+
+
+
+    #macro(selectedFieldsPerType $type $fields)
+      #set($submittedFilters = $!pageContext.get("submittedFilters_field_select"))
+      #foreach ( $submittedFilter in $submittedFilters )
+      	#if ($type == $submittedFilter.get(0))
+        	#set($filterField = $submittedFilter.get(1))
+            $fields.add($filterField)
+        #end
+      #end        
+    #end
+
+
+    #set($filtersOn = true)
+    #setFiltersForComponent("field_select" [$filterTestRun, $filterTestCase])
+    #set($filtersOn = $pageParameters.get("Filters_ON" ).value)
+    #set($trfields = [])
+    #selectedFieldsPerType( "Test_Run" $trfields)
+    #set($tcfields = [])
+    #selectedFieldsPerType( "Test_Case" $tcfields)
+
+
+
+
+    ##================================================  Data Filtering Section ==============================================
+
+    #**
+        How to filterize your query?
+        1. Determine your required filters for this specific query
+        2. if you have a SQL query you need to split the query to 'fromClause' and a 'whereClause' and use 'filterizeMySQLQuery'
+        3. if you have a lucene query you need to use 'filterizeMyLuceneQuery'
+        Note: you can apply multiple filters on each query
+
+       This is an example of a SQL query
+       set($requiredFilters = [$filterTestRun])
+       set($fromClause = "SELECT Distinct TR.C_URI FROM TestRun TR")
+       set($whereClause = "WHERE P.C_ID = '$page.project'")
+       set($componentID = "data_grid_1")
+       filterizeMySQLQuery($requiredFilters $fromClause $whereClause $componentID )
+
+       This is an example of a Lucene query
+       set($requiredFilters = [$filterTestCase])
+       set($query = "type:testcase AND caseimportance.KEY:critical AND project.id:$project")
+       set($componentID = "data_grid_2")
+      filterizeMyLuceneQuery($requiredFilters $query $componentID )
+    *#
+
+
+    #set($requiredFilters = [$filterTestRun])
+    #set($testRunFilters = "")
+    #filterizeMyLuceneQuery($requiredFilters $testRunFilters "data_grid_1")
+
+    #set($requiredFilters = [$filterTestCase])
+    #set($testCaseFilters = "")
+    #filterizeMyLuceneQuery($requiredFilters $testCaseFilters "data_grid_1")
+
+
+## ===============================================        SIM SECTION      ================================================
+
+    <!-- get planningManager object and Management Service object -->
+    #set ($dataService = $trackerService.planningManager)
+    #set ($managementService = $testManagementService)
+
+    #set ($parm_plan = $pageParameters.master_plan.singleValue())
+
+    #if ($userDefinedProject != "no_project")
+        #set($project = $userDefinedProject)
+    #else
+        #set($project = $page.reference.projectId)
+    #end
+
+    #if ($userDefinedProject != "no_project")
+        #if ($userDefinedPlan != "no_plan")
+            #set ($masterplan_id = $userDefinedPlan)
+            #set ($masterplan = $dataService.getPlan($project, $masterplan_id, null))
+        #else
+            #set ($plans = $dataService.searchPlans("project.id:$project AND NOT HAS_VALUE:parent.id", "created", -1))
+        #end
+    #else
+        #set ($parm_plan = $pageParameters.master_plan.singleValue())
+        #if ($parm_plan)
+            #set ($masterplan_id = $parm_plan.id)
+            #set ($masterplan = $dataService.getPlan($project, $masterplan_id, null))
+        #else
+            #set ($plans = $dataService.searchPlans("project.id:$project AND NOT HAS_VALUE:parent.id", "created", -1))
+        #end
+    #end
+
+    #set($tabledata = [])
+    #set($totalsMap = $hashmap.clone())
+    #foreach ($result in ["planned", "passed", "failed", "blocked", "notrun", "other", "runs", "runsnotrun", "runsinprogress", "runsfinished", "runsother"])
+        #set ($discard = $totalsMap.put($result, 0))
+    #end
+
+
+
+    <!-- determine sort order
+    some sort options: 'created', 'startDate' 
+      -->
+
+
+
+    #if ($masterplan)
+	    #buildData($masterplan)
+    #else
+        ##foreach($plan in $plans)
+		    ##buildData($plan)
+	    ##end
+        #buildData("")
+    #end
+
+    #set ($discard = $pageContext.put("display_charts", $pageParameters.get("Display_Charts").value))
+    #set ($discard = $pageContext.put("tabledata", $tabledata))
+    #set ($discard = $pageContext.put("totalsMap", $totalsMap))
+    #set ($discard = $pageContext.put("project", $project))
+#end
+
+##Function getTestRunDataPlan builds the data array and sums the data. 
+#macro(getTestRunDataPlan $myplan)
+    #set ($planMap = $hashmap.clone())
+    #set ($discard = $tabledata.add($planMap))
+    ##Initialize Subtotals to 0
+    #foreach ($result in ["planned", "passed", "failed", "blocked", "notrun", "other"])
+        #set ($discard = $planMap.put($result, 0))
+    #end
+    
+    #set($query = "")
+    #if ($myplan == "")
+        #set ($discard = $planMap.put("id", ""))
+        #set ($discard = $planMap.put("name", "No Plan Selected"))
+        #set ($query = "NOT HAS_VALUE:plannedin")
+    #else
+        #set ($discard = $planMap.put("id", $myplan.id))
+        #set ($discard = $planMap.put("name", $myplan.name))
+        #set ($discard = $planMap.put("name_link", "${baseurl}plan?id=$myplan.id"))
+        #set ($query = "plannedin:$myplan.id")
+    #end
+    #set ($query = "$query $testRunFilters AND project.id:$project AND (NOT status:invalid)")
+    #set ($testrunlist = $managementService.searchTestRuns($query, 'created', -1))
+    #set ($discard = $planMap.put("testruns", []))
+    #set ($testruns = $planMap.get("testruns"))
+    #foreach( $testrun in $testrunlist)
+      #set ($runMap = $hashmap.clone())
+      #set ($discard = $testruns.add($runMap))
+      
+      #set ($discard = $runMap.put("id", $testrun.id))
+      #set ($discard = $runMap.put("title", $testrun.title))
+      #foreach ($result in ["planned", "passed", "failed", "blocked", "notrun", "other"])
+          #set ($discard = $runMap.put($result, 0))
+      #end
+      <!-- add up all the planned and not run tests -->
+      #set ($doc=$testrun.document)
+      #if(!$doc.unresolvable)
+          ## The createQueryForAllTestCases and createQueryForNotExecutedTestCases functions don't take into account iterations.
+          ## The getAllRecordsForTestCase doesn't take into account dynamic records that weren't executed
+          ## this is ok because iterations don't work for dynamic records.
+          ## Therefore, we get all the cases and then parse through them to get all the records per case.
+          ## We use the higher number because it either shows us the iterations or the dynamic records.
+		  #set ($plannedtestsquery = "$testrun.createQueryForAllTestCases() $testCaseFilters")
+          #set ($planned = $trackerService.queryWorkItems($plannedtestsquery, "created"))
+          #set ($discard = $runMap.put("plannedtestsquery", $plannedtestsquery))
+		  #set ($allplanned = 0)
+          #set ($lstAllRecs = [])
+		  #foreach($case in $planned)
+          	#set($allrecs = $testrun.getAllRecordsForTestCase($case.id))
+			#set ($discard = $lstAllRecs.addAll($allrecs))
+			#set ($allplanned = $allplanned + $allrecs.size)
+
+			#foreach ($rec in $allrecs)
+                #if ($rec.result)
+                    #set ($result = $rec.result.id)
+                    #if (!$runMap.containsKey($result))
+                        #set ($result = "other")
+                    #end
+                    #set ($curval = $runMap.get($result) + 1)
+                    #set ($discard = $runMap.put($result, $curval))
+                #end
+            #end
+          #end
+          #if ($planned.size > $allplanned)
+		  	#set ($plannedtest = $planned.size)
+            #set ($lstAllRecs = $planned)
+          #else
+          	#set ($plannedtest = $allplanned)
+          #end
+          #set ($discard = $runMap.put("planned", $plannedtest))
+          #set ($notruntestsquery = "$testrun.createQueryForNotExecutedTestCases() $testCaseFilters")
+          #set ($notrun = $trackerService.queryWorkItems($notruntestsquery, "created"))
+          #set ($discard = $runMap.put("notruntestsquery", $notruntestsquery))
+		  #set ($allnotrun = 0)
+		  #foreach($case in $notrun)
+          	#set($allrecs = $testrun.getAllRecordsForTestCase($case.id))
+			#foreach ($rec in $allrecs)
+				#if (!$rec.result)
+					#set ($allnotrun = $allnotrun + 1)
+                #end
+            #end
+          #end
+          #if ($notrun.size > $allnotrun)
+		  	#set ($discard = $runMap.put("notrun", $notrun.size))
+          #else
+          	#set ($discard = $runMap.put("notrun", $allnotrun))
+          #end
+      #else
+          #set ($discard = $runMap.put("planned", "*"))
+          #set ($discard = $runMap.put("plannedtestsquery", ""))
+          #set ($discard = $runMap.put("notrun", "*"))
+          #set ($discard = $runMap.put("notruntestsquery", ""))
+          
+          ## If the document is not valid, then get the case count the normal way. 
+		  <!-- add up all the passed tests -->
+    
+          #set ($passedtestsquery = "$testrun.createQueryForExecutedTestCases('passed') $testCaseFilters")
+          #set ($passed = $transaction.workItems().search().query($passedtestsquery))
+          #set ($discard = $runMap.put("passed", "* ($passed.size)"))
+          <!-- add up all the failed tests -->
+          #set ($failedtestsquery = "$testrun.createQueryForExecutedTestCases('failed') $testCaseFilters")
+          #set ($failed = $transaction.workItems().search().query($failedtestsquery))      
+          #set ($discard = $runMap.put("failed", "* ($failed.size)"))
+          <!-- add up all the blocked tests -->
+          #set ($blockedtestsquery = "$testrun.createQueryForExecutedTestCases('blocked') $testCaseFilters")
+          #set ($blocked = $transaction.workItems().search().query($blockedtestsquery))
+          #set ($discard = $runMap.put("blocked", "* ($blocked.size)"))
+      #end
+      #set ($curval = $totalsMap.get("runs") + 1)
+      #set ($discard = $totalsMap.put("runs", $curval))
+
+      #if ($testrun.status.id == "notrun")
+          #set ($curval = $totalsMap.get("runsnotrun") + 1)
+          #set ($discard = $totalsMap.put("runsnotrun", $curval))
+      #elseif ($testrun.status.id == "inprogress")
+          #set ($curval = $totalsMap.get("runsinprogress") + 1)
+          #set ($discard = $totalsMap.put("runsinprogress", $curval))
+      #elseif ($testrun.status.id == "finished")
+          #set ($curval = $totalsMap.get("runsfinished") + 1)
+          #set ($discard = $totalsMap.put("runsfinished", $curval))
+      #else
+          #set ($curval = $totalsMap.get("runsother") + 1)
+          #set ($discard = $totalsMap.put("runsother", $curval))
+      #end
+      #foreach ($result in ["planned", "passed", "failed", "blocked", "notrun", "other"])
+        #if ($runMap.get($result) > 0)
+          #set ($curval = $planMap.get($result) + $runMap.get($result))
+          #set ($discard = $planMap.put($result, $curval))
+          #set ($curval = $totalsMap.get($result) + $runMap.get($result))
+          #set ($discard = $totalsMap.put($result, $curval))
+        #end
+      #end
+    #end
+	#foreach($c_plan in $myplan.getChildren())
+    	#getTestRunDataPlan($c_plan $data)
+    #end
+#end
+
+##Function buildData builds the data array and sums the data. 
+#macro(buildData $myplan)
+  #getTestRunDataPlan($myplan)
+#end
+
+

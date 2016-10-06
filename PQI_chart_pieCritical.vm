@@ -1,0 +1,34 @@
+#macro (buildChart)
+
+  #if ($pageContext.get("display_charts") == true)
+      #set ($cases = $pageContext.get("critical"))
+
+      #set ($hm = $pageContext.get("hashmap"))
+
+      #set($html1 = $renderingContext.createHtmlFragmentBuilder())
+      #set($chart = $renderingContext.createChartBuilder())
+
+      #set ($autoappr = $cases.get("apprauto"))
+      #set ($onlyautomated = $cases.get("automated") - $autoappr)
+      #set ($onlyapproved = $cases.get("appr") - $autoappr)
+      #set ($other = $cases.get("total") - $autoappr - $onlyapproved - $onlyautomated)
+
+      #set ($total = $cases.get("total"))
+      #set ($perconlyauto = 100 * $onlyautomated / $total)
+      #set ($perconlyappr = 100 * $onlyapproved / $total)
+      #set ($percautoappr = 100 * $autoappr / $total)
+      #set ($percother = 100 * $other / $total)
+
+      #set($pie = $chart.pie().name("$total Critical cases"))
+      $!pie.addValue("$perconlyauto% Only<br>Automated", $onlyautomated).null
+      $!pie.addValue("$percautoappr% Automated<br>and Approved", $autoappr).null
+      $!pie.addValue("$perconlyappr% Only<br>Approved", $onlyapproved).null
+      $!pie.addValue("$percother% Not Automated<br>nor Approved", $other).null
+      $!chart.build().title().text("$total Critical cases").null
+      $!chart.build().plotOptions().pie().addRawAttribute("tooltip", "{pointFormat: '<b>{point.y}</b>'}").null
+      $!chart.build().plotOptions().pie().addRawAttribute("size", "200").null
+      $!chart.build().render($html1, 300, $renderingContext.columnWidth).null
+      $html1
+  #end
+
+#end

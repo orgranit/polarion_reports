@@ -1,0 +1,141 @@
+#macro(runComponent)
+
+  #import("public_filtersComponent.vm")
+
+  #set($componentID = "data_grid_2")
+  #set($filtersData = $!pageContext.get("filtersData_${componentID}"))
+  #set($submittedFilters = $!pageContext.get("submittedFilters_${componentID}"))
+
+  #buildJSEnvironment()
+
+  #if($filtersData.size() > 0)
+     #buildHtml()
+  #end
+
+
+
+  #set($filters = $!pageContext.get("filtersRaw_${componentID}"))
+
+
+
+  #set ($project = $pageContext.get("project"))
+  #set ($data = $pageContext.get("tabledata"))
+  #set ($hm = $pageContext.get("hashmap"))
+
+    #set ($colTotals = $hm.clone())
+    #foreach ($col in ["planned", "attempted", "notrun", "passed", "failed", "blocked"])
+        #set ($discard = $colTotals.put($col, 0))
+    #end
+    #foreach ($row in $data)
+        #foreach ($col in ["name", "planned", "attempted", "notrun", "passed", "failed", "blocked"])
+            #set ($curval = $colTotals.get($col) + $row.get($col))
+            #set ($discard = $colTotals.put($col, $curval))
+        #end
+    #end
+
+  #if ($pageContext.get("display_charts") == true)
+      #set($html1 = $renderingContext.createHtmlFragmentBuilder())
+      #set($chart = $renderingContext.createChartBuilder())
+      #set($pie = $chart.pie().name("$colTotals.get('planned') Cases - Execution Status"))
+      $!pie.addValue("$colTotals.get('notrun') Not Run", $colTotals.get("notrun")).null
+      $!pie.addValue("$colTotals.get('passed') Passed", $colTotals.get("passed")).null
+      $!pie.addValue("$colTotals.get('failed') Failed", $colTotals.get("failed")).null
+      $!pie.addValue("$colTotals.get('blocked') Blocked", $colTotals.get("blocked")).null
+      $!chart.build().title().text("$colTotals.get('planned') Cases - Execution Status").null
+      $!chart.build().plotOptions().pie().addRawAttribute("tooltip", "{pointFormat: '<b>{point.y}</b>'}").null
+      $!chart.build().plotOptions().pie().addRawAttribute("size", "200").null
+      $!chart.build().render($html1, 300, $renderingContext.columnWidth).null
+      $html1
+  #end
+  <table border=2>
+    <tr>
+      <td>Plan Name</td>
+      <td>Planned</td>
+      <td>Attempted</td>
+      <td>Not Run</td>
+      <td>Passed</td>
+      <td>Failed</td>
+      <td>Blocked</td>
+      <td>Test Case Progress PQI</td>
+      <td>Test Case Execution Status PQI</td>
+    </tr>
+    #set ($colTotals = $hm.clone())
+    #foreach ($col in ["planned", "attempted", "notrun", "passed", "failed", "blocked"])
+        #set ($discard = $colTotals.put($col, 0))
+    #end
+    #foreach ($row in $data)
+        <tr>
+        #foreach ($col in ["name", "planned", "attempted", "notrun", "passed", "failed", "blocked"])
+            #set ($linkname = "${col}_link")
+            #if ($row.get($col))
+                #set ($val = $row.get($col))
+            #else
+                #set ($val = 0)
+            #end
+
+            #set ($url = $row.get($linkname).replaceAll('"', '%22'))
+  		  <td><a target="_blank" href="$url">$row.get($col)</a></td>
+            #set ($curval = $colTotals.get($col) + $row.get($col))
+            #set ($discard = $colTotals.put($col, $curval))
+        #end
+      <!-- Get Test Execution PQI -->
+      #set($tottestatus = 100 * $row.get("passed") / $row.get("attempted"))
+      #if (($row.get("attempted") == 0) || $row.get("passed") ==0 || ($tottestatus == 0))
+         #set($totpqistatus = 0)
+      #elseif ($tottestatus == 100)
+         #set($totpqistatus = 1)
+      #elseif (($tottestatus < 10) && ($tottestatus > 0))
+         #set($totpqistatus = ".0$tottestatus")
+      #else
+         #set($totpqistatus = ".$tottestatus")
+      #end
+
+      <!-- Get Test Execution Progress PQI -->
+      #set($totteprogress = 100 * $row.get("attempted") / $row.get("planned"))
+      #if (($row.get("planned") == 0) || ($row.get("attempted") == 0) || ($totteprogress == 0))
+         #set($totpqiprogress = 0)
+      #elseif ($totteprogress == 100)
+         #set($totpqiprogress = 1)
+      #elseif (($totteprogress < 10) && ($totteprogress > 0))
+         #set($totpqiprogress = ".0$totteprogress")
+      #else
+         #set($totpqiprogress = ".$totteprogress")
+      #end
+            <td>$totpqiprogress</td>
+            <td>$totpqistatus</td>
+        </tr>
+    #end
+    <tr>
+         <td>Total</td>
+         #foreach ($col in ["planned", "attempted", "notrun", "passed", "failed", "blocked"])
+             <td>$colTotals.get($col)</td>
+         #end
+      <!-- Get Test Execution PQI -->
+      #set($tottestatus = 100 * $row.get("passed") / $row.get("attempted"))
+      #if ($colTotals.get("attempted") == 0 || $colTotals.get("passed") == 0 || $tottestatus == 0)
+         #set($totpqistatus = 0)
+      #elseif ($tottestatus == 100)
+         #set($totpqistatus = 1)
+      #elseif (($tottestatus < 10) && ($tottestatus > 0))
+         #set($totpqistatus = ".0$tottestatus")
+      #else
+         #set($totpqistatus = ".$tottestatus")
+      #end
+
+      <!-- Get Test Execution Progress PQI -->
+      #set($totteprogress = 100 * $row.get("attempted") / $row.get("planned"))
+      #if ($colTotals.get("planned") == 0 || $colTotals.get("attempted") == 0 || $totteprogress == 0)
+         #set($totpqiprogress = 0)
+      #elseif ($totteprogress == 100)
+         #set($totpqiprogress = 1)
+      #elseif (($totteprogress < 10) && ($totteprogress > 0))
+         #set($totpqiprogress = ".0$totteprogress")
+      #else
+         #set($totpqiprogress = ".$totteprogress")
+      #end
+            <td>$totpqiprogress</td>
+            <td>$totpqistatus</td>
+    </tr>
+  </table>
+          
+#end

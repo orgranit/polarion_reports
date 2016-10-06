@@ -1,0 +1,332 @@
+#macro (runPageScript)
+
+    #import("public_filtersPageScript.vm")
+    #import("public_projectPlanDropDowns.vm")
+
+    #set ($hashmap = $pageContext.clone())
+    #set($context = $testManagementService.getTestRun($page.reference.projectId, "empty").getContextId())
+
+
+    ## ================================================   Users Definitions Section ====================================================
+
+    #**
+        In this section is where the user will set its deseired filters.
+        Eventually the user will use these filters in the 'filterizeMyLuceneQuery' and 'filterizeMySQLQuery' macros.
+    *#
+
+    #set($propertyFilterType = 0)
+    #set($propertyPolarionType = 1)
+    #set($propertyPolarionControlValue = 2)
+    #set($propertyIsRole = 3)
+    #set($propertyTableName = 4)
+    #set($propertyTableAlias = 5)
+
+
+
+    #**
+        This is where we set our filters, when we want new filter just set a new one below and add it to 'filtersProperties' array
+        filter structure:
+            [filterType, polarionType, controlValue, isRole, tableName, primaryTableAlias]
+            - filterType: uniqe name without spaces ('Test_Run', 'Test_Case' will be displayed as "Test Run, Test Case")
+            - polarionType: polarion type e.g 'WorkItem'
+            - controlValue: polarion control value e.g 'testcase'
+            - isRole: Flag for filters of 'Role' type
+            - tableName: the SQL table name of this filter type
+            - primaryTableAlias: the SQL primary alias name of this filter type
+    *#
+
+
+
+    ## Set new Filters properties here
+
+    #set($filterTestRun = ["Test_Run", "TestRun", "", false, "TestRun", "TR"])                                ## TestRun Filter
+    #set($filterTestCase = ["Test_Case", "WorkItem", "testcase", false, "WorkItem", "TC"])                   ## TestCase Filter
+    #set($filterRequirement = ["Requirement", "WorkItem", "requirement", false, "WorkItem", "REQ"])        ## Requirement Filter
+    #set($filterPlan = ["Plan", "Plan", "plan", false, "Plan", "plan"])                                           ## Plan Filter
+    #set($filterTeam = ["Team", "", "", true, "USER", "team"])                                                    ## Team Filter
+
+
+    ## Append all filters properties to a List
+    #set($filtersProperties= [$filterTestRun, $filterTestCase, $filterRequirement, $filterPlan, $filterTeam])
+    #collectPolarionData($filtersProperties)
+
+
+    #projectPlanDropDowns()
+
+    #**
+        DO THIS FOR EACH COMPONENT
+        -The first argument is the 'componentID'
+        -The second is array of required filters for the component (the filters that appears in the filters drop-down)
+    *#
+
+    #setFiltersForComponent("data_grid_1" [$filterTestCase])
+
+
+
+    ##================================================  Data Filtering Section ==============================================
+
+    #**
+        How to filterize your query?
+        1. Determine your required filters for this specific query
+        2. if you have a SQL query you need to split the query to 'fromClause' and a 'whereClause' and use 'filterizeMySQLQuery'
+        3. if you have a lucene query you need to use 'filterizeMyLuceneQuery'
+        Note: you can apply multiple filters on each query
+
+       This is an example of a SQL query
+       set($requiredFilters = [$filterTestRun])
+       set($fromClause = "SELECT Distinct TR.C_URI FROM TestRun TR")
+       set($whereClause = "WHERE P.C_ID = '$page.project'")
+       set($componentID = "data_grid_1")
+       filterizeMySQLQuery($requiredFilters $fromClause $whereClause $componentID )
+
+       This is an example of a Lucene query
+       set($requiredFilters = [$filterTestCase])
+       set($query = "type:testcase AND caseimportance.KEY:critical AND project.id:$project")
+       set($componentID = "data_grid_2")
+      filterizeMyLuceneQuery($requiredFilters $query $componentID )
+    *#
+
+    #set($requiredFilters = [$filterTestCase])
+    #set($query = "")
+    #filterizeMyLuceneQuery($requiredFilters $query "data_grid_1" )
+
+
+    ## =============================================  User Section   ======================================
+    #if ($userDefinedProject != "no_project")
+        #set($project = $userDefinedProject)
+    #else
+        #set($project = $page.reference.projectId)
+    #end
+    <!-- get planningManager object and Management Service object -->
+    #set ($dataService = $trackerService.getDataService())
+    #set ($planMgr = $trackerService.planningManager)
+    #set ($managementService = $testManagementService)
+    #set ($customFieldsService = $dataService.getCustomFieldsService())
+
+    #set ($project_obj = $trackerService.getTrackerProject($project))
+    #set ($context = $project_obj.contextId)
+
+    #set ($testtypes = $hashmap.clone())
+    #set ($importances = $hashmap.clone())
+    #set ($nonfuncs = $hashmap.clone())
+    #set ($levels = $hashmap.clone())
+    #set ($testcaseFields = $customFieldsService.getDefinedCustomFields("WorkItem", $context, "testcase"))
+    ##populate the data values
+
+    #foreach ($cf in $testcaseFields)
+        #if ($cf.id == "testtype")
+            #getHMValues($testtypes $cf.type)
+        #elseif ($cf.id == "caseimportance")
+            #getHMValues($importances $cf.type)
+        #elseif ($cf.id == "subtype1")
+            #getHMValues($nonfuncs $cf.type)
+        #elseif ($cf.id == "caselevel")
+            #getHMValues($levels $cf.type)
+        #end
+    #end
+
+    #if ($userDefinedProject != "no_project")
+        #if ($userDefinedPlan != "no_plan")
+            #set ($masterplan_id = $userDefinedPlan)
+            #set ($masterplan = $planMgr.getPlan($project, $masterplan_id, null))
+        #else
+            #set ($plans = $planMgr.searchPlans("project.id:$project AND NOT HAS_VALUE:parent.id", "created", -1))
+        #end
+    #else
+        #set ($parm_plan = $pageParameters.master_plan.singleValue())
+        #if ($parm_plan)
+            #set ($masterplan_id = $parm_plan.id)
+            #set ($masterplan = $planMgr.getPlan($project, $masterplan_id, null))
+        #else
+            #set ($plans = $planMgr.searchPlans("project.id:$project AND NOT HAS_VALUE:parent.id", "created", -1))
+        #end
+    #end
+
+    #set ($tabledata = [])
+    #if ($masterplan)
+	    #buildData($masterplan)
+    #else
+        ##foreach($plan in $plans)
+            ##buildData($plan)
+        ##end
+        #buildData("")
+    #end
+
+
+
+
+    #set ($suiteq = "type:testcase AND project.id:$project")
+    #set ($wis = $trackerService.queryWorkItems("$suiteq $query", "created"))
+    #set ($byTestTypeImportance = $hashmap.clone())
+    #set ($byNonfunctional = $hashmap.clone())
+    #set ($byLevel = $hashmap.clone())
+
+    ##populate hash maps with 0s
+    #foreach ($tt in $testtypes.keySet())
+        #set ($discard = $byTestTypeImportance.put($tt, $hashmap.clone()))
+        #foreach($imp in $importances.keySet())
+            #set ($discard = $byTestTypeImportance.get($tt).put($imp, 0))
+        #end
+    #end
+
+    #foreach ($val in $nonfuncs.keySet())
+        #set ($discard = $byNonfunctional.put($val, 0))
+    #end
+
+    #foreach ($val in $levels.keySet())
+        #set ($discard = $byLevel.put($val, 0))
+    #end
+
+    #foreach ($wi in $wis)
+        ## When this migrates to using test suites with multiple cases, the $cnt value may change depending on whether it is a test case or test suite.
+        #set ($cnt = 1)
+        ## Cases By Test Type and Importance
+	    #if (!$testtypes.containsKey($wi.getCustomField("testtype").id))
+        	#set ($ttid = "")
+        #else
+        	#set ($ttid = $wi.getCustomField("testtype").id)
+        #end
+	    #if (!$importances.containsKey($wi.getCustomField("caseimportance").id))
+            #set ($ciid = "")
+        #else
+            #set ($ciid = $wi.getCustomField("caseimportance").id)
+        #end
+        #set ($curval = $byTestTypeImportance.get($ttid).get($ciid) + $cnt)
+        #set ($discard = $byTestTypeImportance.get($ttid).put($ciid, $curval))
+        ## Nonfunctional stats
+        #if ($ttid == "nonfunctional")
+            #set ($st1 = $wi.getCustomField("subtype1").id)
+            #if (!$byNonfunctional.containsKey($st1))
+                #set ($st1 = "")
+            #end
+            #set ($curval = $byNonfunctional.get($st1) + $cnt)
+            #set ($discard = $byNonfunctional.put($st1, $curval))
+        #end
+        ## Stats By Level
+        #set ($cl = $wi.getCustomField("caselevel").id)
+        #if (!$cl)
+            #set ($cl = "")
+        #end
+        #if (!$byLevel.containsKey($cl))
+            #set ($lvl = "")
+        #end
+        #set ($curval = $byLevel.get($cl) + $cnt)
+        #set ($discard = $byLevel.put($cl, $curval))
+        
+    #end
+
+
+
+
+
+
+    #set ($discard = $pageContext.put("display_charts", $pageParameters.get("Display_Charts").value))
+    #set ($discard = $pageContext.put("testtypes", $testtypes))
+    #set ($discard = $pageContext.put("importances", $importances))
+    #set ($discard = $pageContext.put("nonfuncs", $nonfuncs))
+    #set ($discard = $pageContext.put("levels", $levels))
+    #set ($discard = $pageContext.put("byTestTypeImportance", $byTestTypeImportance))
+    #set ($discard = $pageContext.put("byNonfunctional", $byNonfunctional))
+    #set ($discard = $pageContext.put("byLevel", $byLevel))
+    #set ($discard = $pageContext.put("hashmap", $hashmap.clone()))
+    #set ($discard = $pageContext.put("tabledata", $tabledata))
+    #set ($discard = $pageContext.put("project", $project))
+    #set ($discard = $pageContext.put("filtersRaw_data_grid_1", $query))
+#end
+
+
+#macro (getHMValues $hm $key)
+    #set ($enum = $dataService.getEnumerationForEnumId($key, $context))
+    #set ($discard = $hm.put("", "Uncategorized"))
+    #foreach($opt in $enum.getAvailableOptions("testcase"))
+        #if ($opt.id != "-")
+            #set ($discard = $hm.put($opt.id, $opt.name))
+        #end
+    #end
+#end
+
+
+##Function getTestRunDataPlan builds the data array and sums the data. 
+#macro(getTestRunDataPlan $myplan )
+    #set ($planmap = $hashmap.clone())
+    #set ($discard = $tabledata.add($planmap))
+    #if ($myplan == "")
+    	#set ($myplanid = "")
+	#set ($discard = $planmap.put("id", $myplanid))
+        #set ($discard = $planmap.put("name", "No Plan"))
+        #set ($my_query = "NOT HAS_VALUE:plannedin")
+    #else
+    	#set ($myplanid = $myplan.id)
+	#set ($discard = $planmap.put("id", $myplanid))
+        #set ($discard = $planmap.put("name", $myplan.name))
+        #set ($my_query = "plannedin:$myplan.id")
+    #end
+    #set ($discard = $planmap.put("testtype", $hashmap.clone()))
+    #set ($discard = $planmap.put("nonfunctional", $hashmap.clone()))
+    #set ($discard = $planmap.put("level", $hashmap.clone()))
+
+    #foreach ($tt in $testtypes.keySet())
+        #set ($discard = $planmap.get("testtype").put($tt, 0))
+    #end
+    #set ($discard = $planmap.get("testtype").put("", 0))
+    #foreach ($nf in $nonfuncs.keySet())
+        #set ($discard = $planmap.get("nonfunctional").put($nf, 0))
+    #end
+    #set ($discard = $planmap.get("nonfunctional").put("", 0))
+    #foreach ($lvl in $levels.keySet())
+        #set ($discard = $planmap.get("level").put($lvl, 0))
+    #end
+    #set ($discard = $planmap.get("level").put("", 0))
+
+    #set ($my_query = "$my_query AND project.id:$project AND (NOT status:invalid)")
+    #set ($testrunlist = $managementService.searchTestRuns($my_query, 'created', -1))
+
+    #foreach( $testrun in $testrunlist)
+      #set ($doc=$testrun.document)
+      #if(!$doc.unresolvable)
+          #set ($plannedtestsquery = "$testrun.createQueryForAllTestCases()")
+          #set ($planned = $trackerService.queryWorkItems($plannedtestsquery, "created"))
+          #set ($allplanned = 0)
+          #foreach($case in $planned)
+              #if ($case.type.id == "testcase")
+                  #set ($cnt = 1)
+              #elseif ($case.type.id == "testsuite")
+                  #set ($cnt = $case.getCustomField("number_of_cases"))
+                  #if (!$cnt)
+                      #set ($cnt = 1)
+                  #end if
+              #end
+              #set ($tt = $case.getCustomField("testtype").id)
+              #if (!$planmap.get("testtype").containsKey($tt))
+                  #set ($tt = "")
+              #end
+              #set ($curval = $planmap.get("testtype").get($tt) + $cnt)
+              #set ($discard = $planmap.get("testtype").put($tt, $curval))
+              #if ($tt == "nonfunctional")
+                  #set ($nf = $case.getCustomField("subtype1").id)
+                  #if (!$planmap.get("nonfunctional").containsKey($nf))
+                      #set ($nf = "")
+                  #end
+                  #set ($curval = $planmap.get("nonfunctional").get($nf) + $cnt)
+                  #set ($discard = $planmap.get("nonfunctional").put($nf, $curval))
+              #end
+              #set ($lvl = $case.getCustomField("caselevel").id)
+              #if (!$planmap.get("level").containsKey($lvl))
+                  #set ($lvl = "")
+              #end
+              #set ($curval = $planmap.get("level").get($lvl) + $cnt)
+              #set ($discard = $planmap.get("level").put($lvl, $curval))
+          #end
+      #end
+      
+    #end
+    #foreach($c_plan in $myplan.getChildren())
+        #getTestRunDataPlan($c_plan)
+    #end
+#end
+
+##Function buildData builds the data array and sums the data. 
+#macro(buildData $myplan)
+  #getTestRunDataPlan($myplan)
+#end
+
